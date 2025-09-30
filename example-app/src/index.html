@@ -8,17 +8,172 @@
       content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <meta name="format-detection" content="telephone=no" />
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #0f172a;
+        background: #f1f5f9;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem 3rem;
+      }
+
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+
+      p {
+        margin-top: 0;
+      }
+
+      .panel {
+        background: #fff;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+        box-shadow: 0 10px 30px -20px rgba(15, 23, 42, 0.4);
+      }
+
+      .panel h2 {
+        margin-top: 0;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .field span {
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      input,
+      textarea {
+        border-radius: 8px;
+        border: 1px solid #cbd5f5;
+        padding: 0.75rem;
+        font: inherit;
+        background: #f8fafc;
+      }
+
+      textarea {
+        resize: vertical;
+      }
+
+      .actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      button {
+        font: inherit;
+        border: none;
+        border-radius: 999px;
+        padding: 0.65rem 1.5rem;
+        cursor: pointer;
+        background: #2563eb;
+        color: #fff;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      button.secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px -14px rgba(37, 99, 235, 0.8);
+      }
+
+      .field-group {
+        display: grid;
+        gap: 1rem;
+      }
+
+      @media (min-width: 640px) {
+        .field-group {
+          grid-template-columns: 200px 1fr;
+          align-items: start;
+        }
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .log {
+        min-height: 220px;
+        max-height: 320px;
+        overflow: auto;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 12px;
+        padding: 1rem;
+        font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, monospace;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+    </style>
   </head>
   <body>
     <main>
-      <h1>Capacitor Test Plugin Project</h1>
+      <h1>Capacitor Socket.IO Plugin Playground</h1>
       <p>
-        This project can be used to test out the functionality of your plugin. Nothing in the
-        <em>example-app/</em> folder will be published to npm when using this template, so you can create away!
+        Use this page to exercise the Android Socket.IO bridge. Connect to the provided test server, emit
+        events, and observe everything the native layer forwards back to JavaScript.
       </p>
-      <label for="echoInput">Echo Text:</label>
-      <input type="text" id="echoInput" name="echoInput" value="Hello World!" />
-      <button onclick="testEcho()">Click Me!</button>
+
+      <section class="panel">
+        <h2>Connection</h2>
+        <label class="field">
+          <span>Server URL</span>
+          <input type="text" id="serverUrl" value="https://home.atomicfalls.com/" />
+        </label>
+        <div class="actions">
+          <button id="connectBtn">Connect</button>
+          <button id="disconnectBtn" class="secondary">Disconnect</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Emit Event</h2>
+        <div class="field-group">
+          <label class="field">
+            <span>Event name</span>
+            <input type="text" id="eventName" value="ping" />
+          </label>
+          <label class="field">
+            <span>Payload (JSON)</span>
+            <textarea id="eventPayload" rows="4">{"msg": "Hello from Capacitor Android"}</textarea>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="emitBtn">Emit Event</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="header">
+          <h2>Event Log</h2>
+          <button id="clearLogBtn" class="secondary">Clear</button>
+        </div>
+        <pre id="eventLog" class="log"></pre>
+      </section>
     </main>
 
     <script src="./js/example.js" type="module"></script>
