@@ -6,5 +6,8 @@
     "SplashScreen": {
       "launchAutoHide": false
     }
-  }
+  },
+  "packageClassList": [
+    "CapacitorSocketIOPlugin"
+  ]
 }

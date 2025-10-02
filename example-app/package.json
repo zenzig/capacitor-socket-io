@@ -10,16 +10,18 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:android": "node ./scripts/run-mobile.mjs android",
+    "test:ios": "node ./scripts/run-mobile.mjs ios"
   },
   "dependencies": {
-    "@capacitor/core": "latest",
+    "@capacitor/core": "^7.4.3",
     "@zenzig/capacitor-socket-io": "file:..",
-    "@capacitor/ios": "7.0.0",
-    "@capacitor/android": "7.0.0"
+    "@capacitor/ios": "^7.4.3",
+    "@capacitor/android": "^7.4.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "latest",
+    "@capacitor/cli": "^7.4.3",
     "vite": "^5.4.2"
   },
   "author": "",
