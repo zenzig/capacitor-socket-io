@@ -18,6 +18,10 @@ Then sync the native projects so they pick up the latest `@zenzig/capacitor-sock
 npx cap sync ios android
 ```
 
+> **Note:** The playground defaults to `https://socket-proxy.local/`. Replace it with your own
+> HTTPS proxy hostname and record the value in the root `.env` file (see
+> `docs/testing-with-proxy.md` for setup instructions).
+
 #### iOS
 
 Run the interactive launcher to pick a simulator (it boots the device and installs the app without opening Xcode):

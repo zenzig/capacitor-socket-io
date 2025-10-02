@@ -1,0 +1,26 @@
+server {
+    listen 443 ssl;
+    server_name ${SOCKET_PROXY_HOST};
+
+    ssl_certificate     /etc/nginx/certs/socket-proxy.pem;
+    ssl_certificate_key /etc/nginx/certs/socket-proxy-key.pem;
+
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location /socket.io/ {
+        proxy_pass          http://socketio:4000/socket.io/;
+        proxy_http_version  1.1;
+        proxy_set_header    Upgrade $http_upgrade;
+        proxy_set_header    Connection "Upgrade";
+        proxy_set_header    Host $host;
+        proxy_set_header    X-Real-IP $remote_addr;
+    }
+
+    location / {
+        return 200 '{"status":"ok"}';
+        add_header Content-Type application/json;
+    }
+}

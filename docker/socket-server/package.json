@@ -1,0 +1,13 @@
+{
+  "name": "socket-proxy-upstream",
+  "version": "0.1.0",
+  "description": "Local Socket.IO upstream server for the Capacitor Socket.IO proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node socket-server.mjs"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.5"
+  }
+}

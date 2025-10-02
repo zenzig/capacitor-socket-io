@@ -20,7 +20,7 @@ import io.socket.emitter.Emitter;
 public class CapacitorSocketIO {
 
     public static final String LOG_TAG = "CapacitorSocketIO";
-    public static final String DEFAULT_URL = "https://home.atomicfalls.com/";
+    public static final String DEFAULT_URL = "https://socket-proxy.local/";
 
     /** Callback bridge that the Capacitor plugin implements so it can forward events to JS. */
     public interface SocketEventListener {

@@ -1,6 +1,14 @@
+import 'dotenv/config';
 import { io } from 'socket.io-client';
 
-const socket = io('https://home.atomicfalls.com', {
+const serverUrl = process.env.SOCKET_IO_PROXY_URL ?? 'https://socket-proxy.local';
+
+console.log(`[test-socket] connecting to ${serverUrl}`);
+if (serverUrl.includes('socket-proxy.example.com') || serverUrl.includes('socket-proxy.local')) {
+  console.warn('[test-socket] Set SOCKET_IO_PROXY_URL to your TLS proxy to exercise a real server.');
+}
+
+const socket = io(serverUrl, {
   transports: ['websocket'],
   path: '/socket.io',
   secure: true,

@@ -20,6 +20,9 @@ npx cap sync
 
 The sync step installs the native Android/iOS sources into your Capacitor project.
 
+> Copy `.env.example` to `.env` and set `SOCKET_IO_PROXY_URL` to your HTTPS proxy so the helper
+> scripts and verification commands can exercise a real Socket.IO endpoint.
+
 ## Quick start
 
 ```typescript
@@ -39,7 +42,7 @@ await Promise.all(
 
 // 2. Connect to your Socket.IO server.
 await CapacitorSocketIO.connect({
-	url: 'https://home.atomicfalls.com',
+	url: 'https://socket-proxy.local',
 	options: {
 		path: '/socket.io',
 		transports: ['websocket'],
@@ -80,7 +83,7 @@ await CapacitorSocketIO.disconnect();
 
 | Name | Type | Notes |
 | --- | --- | --- |
-| `url` | `string` | Defaults to `https://home.atomicfalls.com/` if omitted. |
+| `url` | `string` | Defaults to `https://socket-proxy.local/` if omitted. |
 | `options.secure` | `boolean` | Force or disable TLS. Defaults based on the URL scheme. |
 | `options.reconnection` | `boolean` | Toggle automatic reconnection. |
 | `options.reconnectionAttempts` | `number` | Max retry count. |
@@ -118,7 +121,41 @@ npx cap run android
 ```
 
 The UI includes controls to connect, emit events, and view the forwarded event log in real time. It
-defaults to the hosted test server at `https://home.atomicfalls.com/` but you can point it anywhere.
+defaults to `https://socket-proxy.local/` as a reminder to supply your own TLS proxy endpoint.
+
+### Testing with a TLS Socket.IO proxy
+
+Capacitor’s WebView inherits the same web security model as a browser, so proper end-to-end testing
+requires a Socket.IO server that is reachable via HTTPS. We intentionally avoid shipping a hard-coded
+endpoint—bring (or stand up) your own proxy instead:
+
+1. Choose a hostname for your test environment (for example `socket-proxy.local`) and generate a
+	trusted certificate with [mkcert](https://github.com/FiloSottile/mkcert) or your preferred PKI.
+2. Stand up a Socket.IO server (Node, Phoenix, etc.) on an internal port such as
+	`http://localhost:4000`.
+3. Place an HTTPS reverse proxy in front of it (Nginx, Caddy, Traefik) that terminates TLS with your
+	certificate and forwards to the upstream Socket.IO server.
+4. Import the certificate authority into your Android emulator/iOS simulator or real devices so they
+	trust the proxy.
+5. Point the plugin, example app, and automated tests at the proxy hostname. The repository’s
+	scripts read from `.env`, so update `SOCKET_IO_PROXY_URL` accordingly.
+
+See [`docs/testing-with-proxy.md`](./docs/testing-with-proxy.md) for a walkthrough that includes
+`mkcert` commands, sample proxy configuration, and extra tips for CI environments.
+
+### Run the bundled proxy stack
+
+For a quick bootstrap, the repository includes a Docker Compose stack under `docker/`:
+
+```bash
+# Generate certs with mkcert and place them in docker/certs/
+cp .env.example .env  # adjust SOCKET_PROXY_HOST if desired
+echo "127.0.0.1 socket-proxy.local" | sudo tee -a /etc/hosts
+npm run proxy:up
+```
+
+The stack exposes HTTPS on port 443 and self-hosts the upstream Socket.IO test server. Shut it down
+with `npm run proxy:down` and watch logs with `npm run proxy:logs`.
 
 ## Updating the generated docs
 

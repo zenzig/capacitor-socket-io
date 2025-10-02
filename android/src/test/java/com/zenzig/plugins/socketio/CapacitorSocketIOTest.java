@@ -1,9 +1,9 @@
 package com.zenzig.plugins.socketio;
 
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.json.JSONObject;
+import org.junit.Assume;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,6 +41,12 @@ public class CapacitorSocketIOTest {
 
     @Test
     public void connectsAndReceivesPong() throws Exception {
+        String proxyUrl = System.getenv("SOCKET_IO_PROXY_URL");
+        Assume.assumeTrue(
+            "Set SOCKET_IO_PROXY_URL to a reachable HTTPS Socket.IO proxy before running this test.",
+            proxyUrl != null && !proxyUrl.trim().isEmpty()
+        );
+
         CountDownLatch connectLatch = new CountDownLatch(1);
         CountDownLatch errorLatch = new CountDownLatch(1);
         AtomicReference<String> errorMessage = new AtomicReference<>("<no error>");
@@ -67,13 +73,13 @@ public class CapacitorSocketIOTest {
         options.forceNew = true;
         options.reconnection = false;
         options.timeout = 5000;
-    options.transports = new String[]{"websocket"};
-    options.path = "/socket.io";
-    OkHttpClient trustAllClient = buildTrustAllClient();
-    options.callFactory = trustAllClient;
-    options.webSocketFactory = trustAllClient;
+        options.transports = new String[]{"websocket"};
+        options.path = "/socket.io";
+        OkHttpClient trustAllClient = buildTrustAllClient();
+        options.callFactory = trustAllClient;
+        options.webSocketFactory = trustAllClient;
 
-        manager.connect(CapacitorSocketIO.DEFAULT_URL, options);
+    manager.connect(proxyUrl, options);
 
         boolean connected = connectLatch.await(25, TimeUnit.SECONDS);
         if (!connected) {

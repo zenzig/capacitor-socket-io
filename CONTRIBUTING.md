@@ -13,6 +13,19 @@ This guide provides instructions for contributing to this Capacitor plugin.
     npm install
     ```
 
+1. Duplicate the environment template and point it at your TLS proxy endpoint.
+
+    ```shell
+    cp .env.example .env
+    # then edit .env and set SOCKET_IO_PROXY_URL=https://socket-proxy.local
+    ```
+
+1. (Optional) Start the bundled proxy stack if you don't already have a Socket.IO endpoint.
+
+    ```shell
+    npm run proxy:up
+    ```
+
 1. Install SwiftLint if you're on macOS.
 
     ```shell
@@ -34,6 +47,10 @@ Then, Rollup will bundle the code into a single file at `dist/plugin.js`. This f
 Build and validate the web and native projects.
 
 This is useful to run in CI to verify that the plugin builds for all platforms.
+
+> Set `SOCKET_IO_PROXY_URL` to the HTTPS endpoint of your Socket.IO proxy before running this
+> command. The Android unit tests will skip automatically if the variable is missing, but the goal
+> is to keep parity with real deployments.
 
 #### `npm run lint` / `npm run fmt`
 

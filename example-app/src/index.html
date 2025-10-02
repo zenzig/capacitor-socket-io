@@ -134,15 +134,16 @@
     <main>
       <h1>Capacitor Socket.IO Plugin Playground</h1>
       <p>
-        Use this page to exercise the native Socket.IO bridge on Android and iOS. Connect to the provided
-        test server, emit events, and observe everything the native layer forwards back to JavaScript.
+        Use this page to exercise the native Socket.IO bridge on Android and iOS. Point it at your own TLS
+        Socket.IO endpoint (or the proxy outlined in the docs), emit events, and observe everything the
+        native layer forwards back to JavaScript.
       </p>
 
       <section class="panel">
         <h2>Connection</h2>
         <label class="field">
           <span>Server URL</span>
-          <input type="text" id="serverUrl" value="https://home.atomicfalls.com/" />
+          <input type="text" id="serverUrl" value="https://socket-proxy.local/" />
         </label>
         <div class="actions">
           <button id="connectBtn">Connect</button>

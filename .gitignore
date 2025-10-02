@@ -27,6 +27,12 @@ DerivedData/
 # Local helper scripts
 scripts/git-history-helper.mjs
 
+# Environment files
+.env
+
+# Local TLS certificates
+docker/certs/*.pem
+
 
 
 # Based on Android gitignore template: https://github.com/github/gitignore/blob/HEAD/Android.gitignore

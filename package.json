@@ -31,8 +31,10 @@
   ],
   "scripts": {
     "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
-    "verify:ios": "xcodebuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
-    "verify:android": "cd android && ./gradlew clean build test && cd ..",
+    "verify:ios": "dotenv -e .env -- npm run verify:ios:raw",
+    "verify:ios:raw": "xcodebuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
+    "verify:android": "dotenv -e .env -- npm run verify:android:raw",
+    "verify:android:raw": "cd android && ./gradlew clean build test && cd ..",
     "verify:web": "npm run build",
     "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint",
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --fix --format",
@@ -43,6 +45,9 @@
     "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
+    "proxy:up": "docker compose -f docker/docker-compose.proxy.yml up --build",
+    "proxy:down": "docker compose -f docker/docker-compose.proxy.yml down",
+    "proxy:logs": "docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
@@ -50,6 +55,8 @@
     "@capacitor/core": "^7.0.0",
     "@capacitor/docgen": "^0.3.0",
     "@capacitor/ios": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "dotenv-cli": "^7.4.2",
     "@ionic/eslint-config": "^0.4.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",

@@ -5,7 +5,7 @@ import SocketIO
 /// the actual plugin class focused on bridging to Capacitor's APIs.
 public final class CapacitorSocketIO {
 
-    public static let defaultURLString = "https://home.atomicfalls.com/"
+    public static let defaultURLString = "https://socket-proxy.local/"
     public static let defaultURL = URL(string: CapacitorSocketIO.defaultURLString)!
 
     public struct ConnectConfiguration {

@@ -12,7 +12,7 @@ import type {
   SocketIOConnectOptions,
 } from './definitions';
 
-const DEFAULT_URL = 'https://home.atomicfalls.com/';
+const DEFAULT_URL = 'https://socket-proxy.local/';
 const CORE_EVENTS = [
   'connect',
   'disconnect',
