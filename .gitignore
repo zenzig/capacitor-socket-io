@@ -21,6 +21,13 @@ DerivedData/
 .DS_Store
 
 
+# Editor settings
+.vscode/
+
+# Local helper scripts
+scripts/git-history-helper.mjs
+
+
 
 # Based on Android gitignore template: https://github.com/github/gitignore/blob/HEAD/Android.gitignore
 

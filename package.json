@@ -30,7 +30,6 @@
     "native"
   ],
   "scripts": {
-    "git:history": "node scripts/git-history-helper.mjs",
     "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
     "verify:ios": "xcodebuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
