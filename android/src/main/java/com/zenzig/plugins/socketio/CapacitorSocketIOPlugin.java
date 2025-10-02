@@ -148,6 +148,10 @@ public class CapacitorSocketIOPlugin extends Plugin {
     }
 
     private void handleSocketEvent(String eventName, Object[] args) {
+        if (Socket.EVENT_CONNECT_ERROR.equals(eventName) && args != null && args.length > 0) {
+            Logger.warn(LOG_TAG, "connect_error payload: " + args[0]);
+        }
+
         JSObject payload = new JSObject();
         payload.put("event", eventName);
         payload.put("args", toJSArray(args));

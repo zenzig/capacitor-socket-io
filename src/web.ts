@@ -177,7 +177,8 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
       opts.transports = options.transports;
     }
     if (options.query) {
-      opts.query = typeof options.query === 'string' ? options.query : this.toQueryString(options.query);
+      const queryValue = typeof options.query === 'string' ? options.query : this.toQueryString(options.query);
+      opts.query = queryValue as unknown as ManagerOptions['query'];
     }
     if (options.allowSelfSigned) {
       opts.rejectUnauthorized = false;

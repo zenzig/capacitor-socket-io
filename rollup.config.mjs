@@ -7,6 +7,7 @@ export default {
       name: 'capacitorCapacitorSocketIO',
       globals: {
         '@capacitor/core': 'capacitorExports',
+        'socket.io-client': 'io',
       },
       sourcemap: true,
       inlineDynamicImports: true,
@@ -18,5 +19,5 @@ export default {
       inlineDynamicImports: true,
     },
   ],
-  external: ['@capacitor/core'],
+  external: ['@capacitor/core', 'socket.io-client'],
 };
