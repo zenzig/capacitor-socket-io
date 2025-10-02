@@ -2,26 +2,22 @@ package com.zenzig.plugins.socketio;
 
 import static org.junit.Assert.fail;
 
-import org.json.JSONObject;
-import org.junit.Assume;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
+import io.socket.client.IO;
+import io.socket.client.Socket;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-
 import okhttp3.OkHttpClient;
-
-import io.socket.client.IO;
-import io.socket.client.Socket;
+import org.json.JSONObject;
+import org.junit.After;
+import org.junit.Assume;
+import org.junit.Before;
+import org.junit.Test;
 
 public class CapacitorSocketIOTest {
 
@@ -73,13 +69,13 @@ public class CapacitorSocketIOTest {
         options.forceNew = true;
         options.reconnection = false;
         options.timeout = 5000;
-        options.transports = new String[]{"websocket"};
+        options.transports = new String[] { "websocket" };
         options.path = "/socket.io";
         OkHttpClient trustAllClient = buildTrustAllClient();
         options.callFactory = trustAllClient;
         options.webSocketFactory = trustAllClient;
 
-    manager.connect(proxyUrl, options);
+        manager.connect(proxyUrl, options);
 
         boolean connected = connectLatch.await(25, TimeUnit.SECONDS);
         if (!connected) {
@@ -120,7 +116,7 @@ public class CapacitorSocketIOTest {
         };
 
         javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
-        sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+        sslContext.init(null, new TrustManager[] { trustManager }, new SecureRandom());
 
         return new OkHttpClient.Builder()
             .sslSocketFactory(sslContext.getSocketFactory(), trustManager)

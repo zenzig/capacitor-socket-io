@@ -28,6 +28,23 @@ const CORE_EVENTS = [
   'pong',
 ];
 
+const isProductionEnvironment = (): boolean => {
+  if (typeof process !== 'undefined' && typeof process.env?.NODE_ENV === 'string') {
+    return process.env.NODE_ENV === 'production';
+  }
+
+  try {
+    const meta = import.meta as { env?: Record<string, string> };
+    if (typeof meta.env?.MODE === 'string') {
+      return meta.env.MODE === 'production';
+    }
+  } catch (error) {
+    // Accessing import.meta may throw in certain bundlers; ignore for environment detection.
+  }
+
+  return false;
+};
+
 export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIOPlugin {
   private socket?: Socket;
   private requestedEvents = new Set<string>();
@@ -60,16 +77,20 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
   }
 
   async on({ event }: { event: string }): Promise<ListenResult> {
-    if (!event || !event.trim()) {
+    const trimmedEvent = event?.trim();
+    if (!trimmedEvent) {
       throw new Error('Event name is required');
     }
 
-    this.requestedEvents.add(event);
-    this.attachDynamicListener(event);
-    return { status: 'listening', event };
+    this.requestedEvents.add(trimmedEvent);
+    this.attachDynamicListener(trimmedEvent);
+    return { status: 'listening', event: trimmedEvent };
   }
 
-  async addListener<T extends SocketEventPayload>(eventName: string, listenerFunc: (event: T) => void): Promise<PluginListenerHandle> {
+  async addListener<T extends SocketEventPayload>(
+    eventName: string,
+    listenerFunc: (event: T) => void,
+  ): Promise<PluginListenerHandle> {
     return super.addListener(eventName, listenerFunc);
   }
 
@@ -173,7 +194,7 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
     if (options.path) {
       opts.path = options.path;
     }
-    if (options.transports && options.transports.length > 0) {
+    if ((options.transports?.length ?? 0) > 0) {
       opts.transports = options.transports;
     }
     if (options.query) {
@@ -181,6 +202,7 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
       opts.query = queryValue as unknown as ManagerOptions['query'];
     }
     if (options.allowSelfSigned) {
+      this.assertSelfSignedAllowed();
       opts.rejectUnauthorized = false;
     }
 
@@ -211,5 +233,13 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
     }
 
     return this.socket;
+  }
+
+  private assertSelfSignedAllowed(): void {
+    if (isProductionEnvironment()) {
+      throw new Error(
+        'allowSelfSigned is disabled in production builds. Configure trusted certificates or pinning instead.',
+      );
+    }
   }
 }

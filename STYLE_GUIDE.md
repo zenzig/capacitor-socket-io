@@ -132,6 +132,10 @@ root
 - **Logging:** Android code uses `Logger` for warnings and debug information; iOS may use
   `print`/`os_log` sparingly. Node scripts use `console.log` with clear prefixes (e.g.
   `[test-socket]`). Avoid noisy logging in production paths.
+during release builds—never attempt to bypass them. For production, prefer CA-issued certificates or
+- **TLS behaviour:** `allowSelfSigned` is **debug-only**. Runtime guards prevent it from being
+  enabled in release builds—never attempt to bypass them. For production, prefer CA-issued
+  certificates or platform-level certificate/public-key pinning.
 - **Testing:** Android tests rely on JUnit 4, iOS tests on XCTest. When adding tests, use descriptive
   method names (`testConnectsAndReceivesPong`). Keep tests deterministic and gate network-dependent
   tests behind environment variables as shown in `CapacitorSocketIOTest`.

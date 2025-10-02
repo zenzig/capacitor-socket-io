@@ -51,6 +51,7 @@ public final class CapacitorSocketIO {
     public enum SocketError: Error, LocalizedError {
         case invalidURL(String)
         case notConnected
+        case allowSelfSignedDisallowed
 
         public var errorDescription: String? {
             switch self {
@@ -58,6 +59,8 @@ public final class CapacitorSocketIO {
                 return "The provided Socket.IO endpoint is invalid: \(value)"
             case .notConnected:
                 return "Socket is not connected. Call connect() first."
+            case .allowSelfSignedDisallowed:
+                return "allowSelfSigned is only available in debug builds. Configure certificate pinning or trusted CAs for release usage."
             }
         }
     }
@@ -159,6 +162,8 @@ public final class CapacitorSocketIO {
     // MARK: - Internal wiring
 
     private func connectInternal(configuration: ConnectConfiguration) throws {
+        try assertSelfSignedUsageAllowed(configuration)
+
         disconnectInternal()
 
         let manager = SocketManager(socketURL: configuration.url, config: buildConfiguration(from: configuration))
@@ -187,7 +192,7 @@ public final class CapacitorSocketIO {
             return
         }
 
-    detachCoreListeners(from: client)
+        detachCoreListeners(from: client)
         detachDynamicListeners(from: client)
 
         client.disconnect()
@@ -248,6 +253,24 @@ public final class CapacitorSocketIO {
         }
 
         return config
+    }
+
+    private static var isDebugBuild: Bool {
+#if DEBUG
+        return true
+#else
+        return false
+#endif
+    }
+
+    private func assertSelfSignedUsageAllowed(_ configuration: ConnectConfiguration) throws {
+        guard configuration.allowSelfSigned else { return }
+
+        if Self.isDebugBuild {
+            return
+        }
+
+        throw SocketError.allowSelfSignedDisallowed
     }
 
     private func attachCoreListeners(socket: SocketIOClient) {

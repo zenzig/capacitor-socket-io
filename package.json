@@ -47,7 +47,9 @@
     "watch": "tsc --watch",
     "proxy:up": "docker compose -f docker/docker-compose.proxy.yml up --build",
     "proxy:down": "docker compose -f docker/docker-compose.proxy.yml down",
-    "proxy:logs": "docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
+  "proxy:logs": "docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
+  "proxy:up:ci": "docker compose -f docker/docker-compose.proxy.yml up --build -d",
+  "proxy:down:ci": "docker compose -f docker/docker-compose.proxy.yml down --volumes --remove-orphans",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {

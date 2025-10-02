@@ -66,6 +66,8 @@ stack. When rotating certs, delete any stale files from `docker/certs/` so the p
 fresh pair.
 
 > **Tip:** If you already manage certificates elsewhere, reuse that pipeline instead of mkcert.
+> Production builds must present a certificate signed by a trusted CA or a key you pin explicitly;
+> `allowSelfSigned` is rejected outside debug builds.
 
 ## 2. Run a Socket.IO upstream server
 
@@ -164,6 +166,16 @@ Set the proxy URL in each place you integrate with the plugin:
 > **Consistency check:** Whatever hostname your certificate covers must match `SOCKET_PROXY_HOST`
 > and `SOCKET_IO_PROXY_URL`. If you issue a new cert for a different host, update `.env` and remove
 > any stale cert/key pairs from `docker/certs/` so the Docker proxy mounts the correct files.
+
+## Production hardening tips
+
+- **Pin certificates or public keys** using Android Network Security Config and iOS ATS overrides
+  if you terminate TLS on infrastructure you control. Prefer SPKI pinning so renewals are easier.
+- Rotate pins ahead of time—ship overlapping pins for the new and old certificates before a swap.
+- Keep the TLS proxy behind automation that renews certificates (Let’s Encrypt, step-ca, Vault,
+  ACME) and push updated certs to your mobile apps through configuration rather than code changes.
+- Treat `allowSelfSigned` as a development-only escape hatch. The native plugins enforce this at
+  runtime but it’s still good practice to gate the flag behind build-time settings.
 
 ## FAQ
 

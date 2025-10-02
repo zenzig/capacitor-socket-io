@@ -1,8 +1,9 @@
 package com.zenzig.plugins.socketio;
 
+import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.os.Handler;
 import android.os.Looper;
-
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Logger;
@@ -10,11 +11,8 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
+import io.socket.client.IO;
+import io.socket.client.Socket;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,14 +22,13 @@ import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-
-import io.socket.client.IO;
-import io.socket.client.Socket;
 import okhttp3.OkHttpClient;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "CapacitorSocketIO")
 public class CapacitorSocketIOPlugin extends Plugin {
@@ -178,10 +175,16 @@ public class CapacitorSocketIOPlugin extends Plugin {
         // Mirror the most common Socket.IO options so the JS layer can configure behaviour.
         opts.secure = options.has("secure") ? options.optBoolean("secure", false) : url != null && url.startsWith("https");
         opts.reconnection = options.optBoolean("reconnection", opts.reconnection);
-        opts.reconnectionAttempts = options.has("reconnectionAttempts") ? options.optInt("reconnectionAttempts", opts.reconnectionAttempts) : opts.reconnectionAttempts;
+        opts.reconnectionAttempts = options.has("reconnectionAttempts")
+            ? options.optInt("reconnectionAttempts", opts.reconnectionAttempts)
+            : opts.reconnectionAttempts;
         opts.timeout = options.has("timeout") ? options.optLong("timeout", opts.timeout) : opts.timeout;
-        opts.reconnectionDelay = options.has("reconnectionDelay") ? options.optLong("reconnectionDelay", opts.reconnectionDelay) : opts.reconnectionDelay;
-        opts.reconnectionDelayMax = options.has("reconnectionDelayMax") ? options.optLong("reconnectionDelayMax", opts.reconnectionDelayMax) : opts.reconnectionDelayMax;
+        opts.reconnectionDelay = options.has("reconnectionDelay")
+            ? options.optLong("reconnectionDelay", opts.reconnectionDelay)
+            : opts.reconnectionDelay;
+        opts.reconnectionDelayMax = options.has("reconnectionDelayMax")
+            ? options.optLong("reconnectionDelayMax", opts.reconnectionDelayMax)
+            : opts.reconnectionDelayMax;
 
         if (options.has("path")) {
             opts.path = options.optString("path", opts.path);
@@ -204,6 +207,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
         }
 
         if (options.optBoolean("allowSelfSigned", false)) {
+            ensureSelfSignedAllowed();
             configureTrustAllSsl(opts);
         }
 
@@ -235,7 +239,13 @@ public class CapacitorSocketIOPlugin extends Plugin {
         for (Object arg : args) {
             if (arg == null) {
                 array.put(JSONObject.NULL);
-            } else if (arg instanceof JSONObject || arg instanceof JSONArray || arg instanceof Number || arg instanceof Boolean || arg instanceof String) {
+            } else if (
+                arg instanceof JSONObject ||
+                arg instanceof JSONArray ||
+                arg instanceof Number ||
+                arg instanceof Boolean ||
+                arg instanceof String
+            ) {
                 array.put(arg);
             } else if (arg instanceof byte[]) {
                 array.put(new String((byte[]) arg, StandardCharsets.UTF_8));
@@ -296,7 +306,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
             };
 
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+            sslContext.init(null, new TrustManager[] { trustManager }, new SecureRandom());
 
             OkHttpClient client = new OkHttpClient.Builder()
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager)
@@ -309,6 +319,26 @@ public class CapacitorSocketIOPlugin extends Plugin {
         } catch (Exception ex) {
             Logger.warn(LOG_TAG, "Unable to configure trust-all SSL context: " + ex.getMessage());
         }
+    }
+
+    private void ensureSelfSignedAllowed() {
+        if (isDebuggableBuild()) {
+            return;
+        }
+
+        throw new SecurityException(
+            "allowSelfSigned is only supported in debug builds. Configure certificate pinning or trusted CAs for release usage."
+        );
+    }
+
+    private boolean isDebuggableBuild() {
+        Context context = getContext();
+        if (context == null) {
+            return false;
+        }
+
+        ApplicationInfo appInfo = context.getApplicationInfo();
+        return (appInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private void resolveOnUiThread(PluginCall call, JSObject data) {

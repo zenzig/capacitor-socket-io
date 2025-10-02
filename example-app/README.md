@@ -20,7 +20,8 @@ npx cap sync ios android
 
 > **Note:** The playground defaults to `https://socket-proxy.local/`. Replace it with your own
 > HTTPS proxy hostname and record the value in the root `.env` file (see
-> `docs/testing-with-proxy.md` for setup instructions).
+> `docs/testing-with-proxy.md` for setup instructions). Self-signed certificates are only trusted in
+> development builds; production builds must present a CA-issued or pinned certificate.
 
 #### iOS
 

@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  NODE_VERSION: '20'
+  SOCKET_PROXY_HOST: socket-proxy.local
+  SOCKET_IO_PROXY_URL: https://socket-proxy.local
+
+jobs:
+  lint-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run eslint
+
+      - name: Run Prettier (check)
+        run: npm run prettier -- --check
+
+      - name: Build TypeScript artifacts
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  tls-integration:
+    runs-on: ubuntu-latest
+    needs: lint-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate short-lived TLS certificates
+        run: |
+          mkdir -p docker/certs
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout docker/certs/socket-proxy-key.pem \
+            -out docker/certs/socket-proxy.pem \
+            -subj "/CN=${SOCKET_PROXY_HOST}"
+
+      - name: Start proxy stack
+        run: npm run proxy:up:ci
+
+      - name: Wait for proxy health
+        run: |
+          for attempt in {1..10}; do
+            if curl -sk https://${SOCKET_PROXY_HOST}/ | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Proxy did not become ready" >&2
+          exit 1
+
+      - name: Run Socket.IO smoke test
+        run: node scripts/test-socket.mjs
+
+      - name: Shutdown proxy stack
+        if: always()
+        run: npm run proxy:down:ci
+
+  android:
+    runs-on: ubuntu-latest
+    needs: lint-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Node dependencies (for shared tooling)
+        run: npm ci
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Install Android SDK components
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 35
+          build-tools: '35.0.0'
+
+      - name: Run Android unit tests
+        run: npm run verify:android:raw
+
+  ios:
+    runs-on: macos-latest
+    needs: lint-build
+    env:
+      LANG: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: npm run swiftlint -- lint
+
+      - name: Generate short-lived TLS certificates
+        run: |
+          mkdir -p docker/certs
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout docker/certs/socket-proxy-key.pem \
+            -out docker/certs/socket-proxy.pem \
+            -subj "/CN=${SOCKET_PROXY_HOST}"
+
+      - name: Start proxy stack
+        run: npm run proxy:up:ci
+
+      - name: Wait for proxy health
+        run: |
+          for attempt in {1..10}; do
+            if curl -sk https://${SOCKET_PROXY_HOST}/ | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Proxy did not become ready" >&2
+          exit 1
+
+      - name: Build iOS target
+        run: npm run verify:ios:raw
+
+      - name: Shutdown proxy stack
+        if: always()
+        run: npm run proxy:down:ci
+*** End Patch

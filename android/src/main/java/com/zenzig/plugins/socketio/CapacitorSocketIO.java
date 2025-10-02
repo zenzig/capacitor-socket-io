@@ -1,15 +1,13 @@
 package com.zenzig.plugins.socketio;
 
 import com.getcapacitor.Logger;
-
+import io.socket.client.IO;
+import io.socket.client.Socket;
+import io.socket.emitter.Emitter;
 import java.net.URISyntaxException;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import io.socket.client.IO;
-import io.socket.client.Socket;
-import io.socket.emitter.Emitter;
 
 /**
  * Thin wrapper around the Socket.IO Java client that keeps track of the active socket, the events
@@ -151,7 +149,7 @@ public class CapacitorSocketIO {
     }
 
     private void attachCoreListener(String event) {
-        Emitter.Listener listener = args -> dispatchEvent(event, args);
+        Emitter.Listener listener = (args) -> dispatchEvent(event, args);
         coreListeners.put(event, listener);
         socket.on(event, listener);
     }
@@ -165,7 +163,7 @@ public class CapacitorSocketIO {
             return;
         }
 
-        Emitter.Listener listener = args -> dispatchEvent(event, args);
+        Emitter.Listener listener = (args) -> dispatchEvent(event, args);
         dynamicListeners.put(event, listener);
         socket.on(event, listener);
     }
