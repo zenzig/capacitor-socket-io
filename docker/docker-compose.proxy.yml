@@ -21,7 +21,7 @@ services:
     environment:
       SOCKET_PROXY_HOST: ${SOCKET_PROXY_HOST:-socket-proxy.local}
     ports:
-      - "443:443"
+      - "${SOCKET_PROXY_PORT:-443}:443"
     command: >-
       /bin/sh -c "envsubst '$$SOCKET_PROXY_HOST' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
       && nginx -g 'daemon off;'"

@@ -143,7 +143,7 @@
         <h2>Connection</h2>
         <label class="field">
           <span>Server URL</span>
-          <input type="text" id="serverUrl" value="https://socket-proxy.local/" />
+          <input type="text" id="serverUrl" placeholder="https://socket-proxy.local/" />
         </label>
         <div class="actions">
           <button id="connectBtn">Connect</button>
@@ -177,6 +177,37 @@
       </section>
     </main>
 
+    <script type="module">
+      const FALLBACK_PROXY_URL = 'https://socket-proxy.local/';
+
+      const ensureTrailingSlash = (value) => {
+        if (!value) {
+          return FALLBACK_PROXY_URL;
+        }
+
+        return value.endsWith('/') ? value : `${value}/`;
+      };
+
+      const env = import.meta.env ?? {};
+      const sanitize = (value) => (typeof value === 'string' ? value.trim() : '');
+
+      const configuredDefaults = {
+        default: sanitize(env.VITE_SOCKET_PROXY_URL),
+        android: sanitize(env.VITE_SOCKET_PROXY_URL_ANDROID),
+        ios: sanitize(env.VITE_SOCKET_PROXY_URL_IOS),
+        web: sanitize(env.VITE_SOCKET_PROXY_URL_WEB),
+      };
+
+      const resolvedDefault = ensureTrailingSlash(configuredDefaults.default || FALLBACK_PROXY_URL);
+      const socketProxyOrigins = Object.fromEntries(
+        Object.entries(configuredDefaults).map(([platform, url]) => [platform, ensureTrailingSlash(url || resolvedDefault)]),
+      );
+
+      window.APP_CONFIG = {
+        socketProxyOrigins,
+        fallbackProxyUrl: resolvedDefault,
+      };
+    </script>
     <script src="./js/example.js" type="module"></script>
   </body>
 </html>

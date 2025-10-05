@@ -113,7 +113,7 @@ Vite and ready for both web and native testing.
 ```bash
 cd example-app
 npm install
-npm run dev
+npm run build
 ```
 
 To launch the native demo on Android:
@@ -125,6 +125,35 @@ npx cap run android
 
 The UI includes controls to connect, emit events, and view the forwarded event log in real time. It
 defaults to `https://socket-proxy.local/` as a reminder to supply your own TLS proxy endpoint.
+
+Populate the following variables in the repository’s `.env` file to align the playground with the
+bundled Docker proxy. Running `npm run proxy:setup` writes these values for you:
+
+```env
+SOCKET_PROXY_PORT=443
+VITE_SOCKET_PROXY_URL=https://socket-proxy.local
+ANDROID_PROXY_LAN_IP=192.168.0.28
+```
+
+The Android launcher (`npm run test:android`) now adds the required hosts entry automatically when
+`ANDROID_PROXY_LAN_IP` is set. Use the commands below only if you need to perform the mapping
+manually. It reads the repository root `.env` even when run from `example-app/`, so rerun the
+launcher after network changes to refresh the device mapping:
+
+> **Custom port:** If you run the proxy on a port other than 443, append it to any URLs above—for
+> example `VITE_SOCKET_PROXY_URL=https://socket-proxy.local:4443`.
+
+```bash
+adb root
+adb remount
+adb shell "echo '192.168.0.28 socket-proxy.local' >> /system/etc/hosts"
+adb reboot
+```
+
+> **Emulator images:** Pick a *Google APIs* system image (avoid the Google Play Store flavour) when
+> creating AVDs. These images allow `/system` to be remounted read/write. The launcher boots new
+> emulators with `-writable-system`, but pre-existing emulators must be restarted with that flag for
+> the automatic host mapping to succeed.
 
 ### Testing with a TLS Socket.IO proxy
 
@@ -141,7 +170,8 @@ endpoint—bring (or stand up) your own proxy instead:
 4. Import the certificate authority into your Android emulator/iOS simulator or real devices so they
 	trust the proxy.
 5. Point the plugin, example app, and automated tests at the proxy hostname. The repository’s
-	scripts read from `.env`, so update `SOCKET_IO_PROXY_URL` accordingly.
+	scripts read from `.env`, so update `SOCKET_IO_PROXY_URL` (for helper scripts) and
+	`VITE_SOCKET_PROXY_URL` (for the example app) accordingly.
 
 See [`docs/testing-with-proxy.md`](./docs/testing-with-proxy.md) for a walkthrough that includes
 `mkcert` commands, sample proxy configuration, and extra tips for CI environments.
@@ -172,17 +202,24 @@ Breaking changes will be called out in the changelog together with migration ste
 
 ### Run the bundled proxy stack
 
-For a quick bootstrap, the repository includes a Docker Compose stack under `docker/`:
+For a quick bootstrap, the repository includes a Docker Compose stack under `docker/`. The fastest
+path is:
 
 ```bash
-# Generate certs with mkcert and place them in docker/certs/
-cp .env.example .env  # adjust SOCKET_PROXY_HOST if desired
-echo "127.0.0.1 socket-proxy.local" | sudo tee -a /etc/hosts
-npm run proxy:up
+npm run proxy:setup
 ```
 
-The stack exposes HTTPS on port 443 and self-hosts the upstream Socket.IO test server. Shut it down
-with `npm run proxy:down` and watch logs with `npm run proxy:logs`.
+The setup script checks for mkcert, generates `docker/certs/socket-proxy.pem`, normalises `.env`,
+and starts the containers detached. Ensure the Docker daemon is running beforehand. Prefer to run
+steps manually (or on a host without Docker)? Append `--no-start` to skip launching the containers,
+and start them later with `npm run proxy:up`. Need a different hostname? Add
+`--host dev.example.com`. Port 443 already taken locally? Use `--port 4443` (or another free port);
+the script updates `.env`, rewrites the proxy URL with the new port, and passes it to Docker
+Compose.
+
+The stack exposes HTTPS on the port you choose (defaults to 443) and self-hosts the upstream
+Socket.IO test server. Shut it down with `npm run proxy:down` and watch logs with
+`npm run proxy:logs`.
 
 ## Updating the generated docs
 
