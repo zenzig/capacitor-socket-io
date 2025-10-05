@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { CapacitorSocketIO } from '@zenzig/capacitor-socket-io';
 
 const CORE_EVENTS = Object.freeze([
@@ -24,6 +25,61 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const emitBtn = document.getElementById('emitBtn');
 const clearLogBtn = document.getElementById('clearLogBtn');
 const logElement = document.getElementById('eventLog');
+
+const appConfig = (typeof window !== 'undefined' && window.APP_CONFIG) || {};
+const FALLBACK_PROXY_URL = 'https://socket-proxy.local/';
+
+const ensureTrailingSlash = (value) => {
+    if (!value) {
+        return FALLBACK_PROXY_URL;
+    }
+
+    return value.endsWith('/') ? value : `${value}/`;
+};
+
+const isIpAddress = (value) => {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
+    const trimmed = value.replace(/\/+$/, '').trim();
+    return /^(\d{1,3}\.){3}\d{1,3}$/.test(trimmed);
+};
+
+const getPlatformKey = () => {
+    try {
+        const platform = typeof Capacitor?.getPlatform === 'function' ? Capacitor.getPlatform() : undefined;
+        if (typeof platform === 'string' && platform.length > 0) {
+            return platform.toLowerCase();
+        }
+    } catch (error) {
+        console.warn('Unable to determine Capacitor platform', error);
+    }
+
+    return 'web';
+};
+
+const selectProxyOrigin = () => {
+    const origins = appConfig.socketProxyOrigins || {};
+    const platformKey = getPlatformKey();
+    const fallback = typeof appConfig.fallbackProxyUrl === 'string' ? appConfig.fallbackProxyUrl : FALLBACK_PROXY_URL;
+    const canonical = origins.default || fallback;
+    const candidate = origins[platformKey];
+
+    if (candidate && platformKey === 'android' && isIpAddress(candidate) && !isIpAddress(canonical)) {
+        return ensureTrailingSlash(canonical);
+    }
+
+    const selected = candidate || canonical || fallback;
+    return ensureTrailingSlash(selected);
+};
+
+const DEFAULT_SERVER_URL = selectProxyOrigin();
+
+if (serverUrlInput) {
+    const existingValue = (serverUrlInput.value || '').trim();
+    serverUrlInput.value = ensureTrailingSlash(existingValue || DEFAULT_SERVER_URL);
+}
 
 const registeredEvents = new Set();
 const listenerHandles = new Map();

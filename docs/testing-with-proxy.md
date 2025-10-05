@@ -21,7 +21,13 @@ Substitute your organisation’s internal CA or another PKI solution if preferre
 ## Quick start with Docker Compose
 
 Prefer a ready-made environment? This repository ships a Docker stack that launches an upstream
-Socket.IO server and an HTTPS reverse proxy. At a glance:
+Socket.IO server and an HTTPS reverse proxy. Run `npm run proxy:setup` from the repo root to
+generate certificates with mkcert, normalise `.env`, and bring the stack up automatically (ensure
+Docker is running first). Append `--host dev.example.com` to use a different hostname, `--port 4443`
+if 443 is already taken locally, or `--no-start` if you only want the certificates and `.env`
+updates without launching Docker. The script inspects active listeners and prints whichever process
+currently owns a conflicting port so you can resolve the clash quickly. Under the hood the script
+performs the following steps (you can run them manually if you prefer):
 
 1. Generate certificates for `socket-proxy.local` (steps below) and drop them into
   `docker/certs/` as `socket-proxy.pem` (certificate chain) and `socket-proxy-key.pem` (private
@@ -33,9 +39,9 @@ Socket.IO server and an HTTPS reverse proxy. At a glance:
     -key-file docker/certs/socket-proxy-key.pem \
     socket-proxy.local "*.socket-proxy.local"
   ```
-2. Add the hostname to your hosts file: `127.0.0.1 socket-proxy.local`.
-3. Copy `.env.example` to `.env` and set `SOCKET_PROXY_HOST` / `SOCKET_IO_PROXY_URL` if you prefer a
-  different hostname.
+2. Map the hostname to your machine’s LAN IP in the hosts file (for example `192.168.0.28 socket-proxy.local`). You can add it manually or let `npm run proxy:setup --write-hosts` try to update `/etc/hosts` for you (macOS/Linux; prompts for sudo if needed). On Windows, run an elevated editor and add the entry manually.
+3. Copy `.env.example` to `.env` (the setup script handles this) and set `SOCKET_PROXY_HOST` /
+  `SOCKET_IO_PROXY_URL` if you prefer a different hostname.
 4. Start the stack from the repo root:
 
   ```bash
@@ -159,13 +165,48 @@ Set the proxy URL in each place you integrate with the plugin:
 - **Plugin calls:** pass `url: 'https://socket-proxy.local'` to `CapacitorSocketIO.connect()`.
 - **Android unit tests:** set `SOCKET_IO_PROXY_URL` in `.env` (or export it manually) before running
   `npm run verify:android`.
-- **Example app:** update the Server URL field from its placeholder to your proxy hostname.
+- **Example app:** update the Server URL field from its placeholder to your proxy hostname—or set
+  `VITE_SOCKET_PROXY_URL` in `.env`. When the proxy runs on a LAN IP that differs from the hostname
+  in your certificate, also set `ANDROID_PROXY_LAN_IP` so the Android launcher script writes an entry
+  to `/system/etc/hosts` before installing the app:
+
+  ```env
+  SOCKET_PROXY_PORT=443
+  VITE_SOCKET_PROXY_URL=https://socket-proxy.local
+  ANDROID_PROXY_LAN_IP=192.168.0.28
+  ```
 - **Helper scripts:** populate `SOCKET_IO_PROXY_URL` in `.env` for `scripts/test-socket.js` /
   `test-socket.mjs`.
+
+If you pick a non-default port, append it to the URLs above—for example
+`VITE_SOCKET_PROXY_URL=https://socket-proxy.local:4443`.
+
+Per-platform overrides were previously required for emulators; the launcher script now handles host
+mapping automatically when `ANDROID_PROXY_LAN_IP` is present.
 
 > **Consistency check:** Whatever hostname your certificate covers must match `SOCKET_PROXY_HOST`
 > and `SOCKET_IO_PROXY_URL`. If you issue a new cert for a different host, update `.env` and remove
 > any stale cert/key pairs from `docker/certs/` so the Docker proxy mounts the correct files.
+
+> **Android emulators:** When your proxy runs on the host machine (for example listening on
+> `192.168.0.28`), the launcher script adds a hosts entry automatically if `ANDROID_PROXY_LAN_IP`
+> is provided. To apply the mapping manually (or on older builds):
+>
+> ```bash
+> adb root
+> adb remount
+> adb shell "echo '192.168.0.28 socket-proxy.local' >> /system/etc/hosts"
+> adb reboot
+> ```
+>
+> After the reboot, install the development certificate authority on the emulator so TLS handshakes
+> succeed. Apply an equivalent mapping on physical devices via Wi-Fi advanced settings, and ensure
+> the certificate authority is trusted system-wide.
+
+> **AVD tip:** Choose a *Google APIs* system image (avoid Google Play Store images) for test AVDs.
+> These builds allow `/system` to be remounted. The `npm run test:android` script launches emulators
+> with `-writable-system`; existing emulators must be restarted with that flag for automatic host
+> mapping.
 
 ## Production hardening tips
 

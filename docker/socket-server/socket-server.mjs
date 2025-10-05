@@ -10,7 +10,7 @@ const io = new Server(httpServer, {
   path,
 });
 
-aio.on('connection', (socket) => {
+io.on('connection', (socket) => {
   console.log(`[upstream] client ${socket.id} connected`);
 
   socket.on('ping', (payload, ack) => {

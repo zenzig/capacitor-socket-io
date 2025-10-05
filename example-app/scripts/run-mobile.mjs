@@ -1,8 +1,30 @@
 #!/usr/bin/env node
+import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'child_process';
 import { createInterface } from 'readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load environment variables from the example app directory and repository root without overriding existing values.
+const ENV_LOCATIONS = [
+  path.resolve(__dirname, '..', '.env.local'),
+  path.resolve(__dirname, '..', '.env'),
+  path.resolve(__dirname, '..', '..', '.env.local'),
+  path.resolve(__dirname, '..', '..', '.env'),
+];
+
+for (const candidate of ENV_LOCATIONS) {
+  const result = loadEnv({ path: candidate, override: false });
+  if (result.error && result.error.code !== 'ENOENT') {
+    console.warn(`Unable to read environment file at ${candidate}:`, result.error.message ?? result.error);
+  }
+}
+
+const { proxyHost, proxyLanIp } = resolveProxyConfig();
 
 const platform = process.argv[2];
 if (!['android', 'ios'].includes(platform)) {
@@ -38,7 +60,7 @@ async function runAndroid() {
   for (const device of deviceList) {
     options.push({
       label: `Use connected device: ${device.id} (${device.description})`,
-      run: () => runCapacitor(['cap', 'run', 'android', '--target', device.id]),
+      run: () => configureAndRunAndroid(device.id),
     });
   }
 
@@ -84,15 +106,17 @@ function listAndroidDevices() {
 }
 
 async function launchAvdAndRun(avdName, existingIds) {
-  console.log(`\nStarting emulator ${avdName}…`);
-  const emulatorProc = spawn('emulator', ['-avd', avdName], {
+  console.log(`\nStarting emulator ${avdName} with writable system image…`);
+  const emulatorProc = spawn('emulator', ['-avd', avdName, '-writable-system'], {
     stdio: 'ignore',
     detached: true,
   });
   emulatorProc.unref();
 
   const targetId = await waitForAndroidDevice(existingIds);
-  console.log(`Detected emulator ${targetId}. Installing app…\n`);
+  console.log(`Detected emulator ${targetId}. Configuring proxy mapping…`);
+  await configureAndroidHosts(targetId);
+  console.log('Installing app…\n');
   await runCapacitor(['cap', 'run', 'android', '--target', targetId]);
 }
 
@@ -199,4 +223,83 @@ function runCapacitor(args) {
       }
     });
   });
+}
+
+async function configureAndRunAndroid(targetId) {
+  await configureAndroidHosts(targetId);
+  await runCapacitor(['cap', 'run', 'android', '--target', targetId]);
+}
+
+async function configureAndroidHosts(targetId) {
+  if (!proxyHost || !proxyLanIp || proxyHost === proxyLanIp) {
+    return;
+  }
+
+  console.log(`  → Ensuring ${proxyHost} resolves to ${proxyLanIp} on device ${targetId ?? '<default>'}`);
+
+  const adbArgs = (...args) => (targetId ? ['-s', targetId, ...args] : args);
+
+  const runAdb = (args) => {
+    const result = spawnSync('adb', adbArgs(...args), { encoding: 'utf8' });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      const stderr = result.stderr?.trim();
+      throw new Error(`adb ${args.join(' ')} failed${stderr ? `: ${stderr}` : ''}`);
+    }
+    return result.stdout;
+  };
+
+  try {
+    runAdb(['root']);
+    await delay(750);
+    try {
+      runAdb(['remount']);
+    } catch (error) {
+      throw new Error(
+        `adb remount failed. Ensure the emulator was started with -writable-system and uses a Google APIs system image (not Google Play Store). Original error: ${
+          error?.message ?? error
+        }`,
+      );
+    }
+    const entry = `${proxyLanIp} ${proxyHost}`;
+    runAdb(['shell', `grep -q '${entry}' /system/etc/hosts || echo '${entry}' >> /system/etc/hosts`]);
+    console.log('  ✔ Host mapping applied');
+  } catch (error) {
+    console.warn('  ⚠️  Unable to update /system/etc/hosts automatically. Proceeding anyway.', error?.message ?? error);
+  }
+}
+
+function resolveProxyConfig() {
+  const canonicalUrl = process.env.VITE_SOCKET_PROXY_URL;
+  const androidUrlOverride = process.env.VITE_SOCKET_PROXY_URL_ANDROID;
+  const lanIpOverride =
+    process.env.ANDROID_PROXY_LAN_IP || process.env.VITE_SOCKET_PROXY_URL_ANDROID_LAN_IP || undefined;
+
+  const host = safeHostname(canonicalUrl) || safeHostname(androidUrlOverride);
+  const lanIp = lanIpOverride || extractLanIp(androidUrlOverride);
+
+  return { proxyHost: host, proxyLanIp: lanIp };
+}
+
+function safeHostname(url) {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    return new URL(url).hostname;
+  } catch (error) {
+    return undefined;
+  }
+}
+
+function extractLanIp(url) {
+  const host = safeHostname(url);
+  if (!host) {
+    return undefined;
+  }
+
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ? host : undefined;
 }

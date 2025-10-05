@@ -1,0 +1,520 @@
+#!/usr/bin/env node
+import { spawnSync } from 'child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { config as loadEnv } from 'dotenv';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..');
+const envExamplePath = path.join(repoRoot, '.env.example');
+const envPath = path.join(repoRoot, '.env');
+const certDir = path.join(repoRoot, 'docker', 'certs');
+const certPath = path.join(certDir, 'socket-proxy.pem');
+const keyPath = path.join(certDir, 'socket-proxy-key.pem');
+const rawArgs = process.argv.slice(2);
+const options = parseArgs(rawArgs);
+const { force, noStart, host: hostOverride, port: portOverride, writeHosts } = options;
+
+function logStep(message) {
+  console.log(`\n▶ ${message}`);
+}
+
+function parseArgs(args) {
+  const result = { force: false, noStart: false, host: undefined, port: undefined, writeHosts: false };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === '--force') {
+      result.force = true;
+      continue;
+    }
+
+    if (arg === '--no-start') {
+      result.noStart = true;
+      continue;
+    }
+
+    if (arg === '--write-hosts') {
+      result.writeHosts = true;
+      continue;
+    }
+
+    if (arg.startsWith('--host=')) {
+      const value = arg.slice('--host='.length).trim();
+      if (value) {
+        result.host = value;
+      } else {
+        console.warn('Ignoring empty --host value.');
+      }
+      continue;
+    }
+
+    if (arg === '--host') {
+      const next = args[index + 1];
+      if (next && !next.startsWith('--')) {
+        result.host = next.trim();
+        index += 1;
+      } else {
+        console.warn('Ignoring --host flag without a value.');
+      }
+      continue;
+    }
+
+    if (arg.startsWith('--port=')) {
+      const value = arg.slice('--port='.length).trim();
+      if (value) {
+        result.port = value;
+      } else {
+        console.warn('Ignoring empty --port value.');
+      }
+      continue;
+    }
+
+    if (arg === '--port') {
+      const next = args[index + 1];
+      if (next && !next.startsWith('--')) {
+        result.port = next.trim();
+        index += 1;
+      } else {
+        console.warn('Ignoring --port flag without a value.');
+      }
+      continue;
+    }
+
+    console.warn(`Unknown option "${arg}" ignored.`);
+  }
+
+  return result;
+}
+
+function normalisePort(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const portNumber = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(portNumber) || portNumber <= 0 || portNumber > 65535) {
+    throw new Error(`Invalid port "${value}". Choose an integer between 1 and 65535.`);
+  }
+
+  return portNumber;
+}
+
+function checkPortAvailability(port) {
+  if (port === undefined) {
+    return;
+  }
+
+  if (process.platform !== 'win32') {
+    const args = ['-nP', '-iTCP', `:${port}`, '-sTCP:LISTEN'];
+    const result = spawnSync('lsof', args, { stdio: 'pipe' });
+
+    if (result.error && result.error.code === 'ENOENT') {
+      console.warn('lsof not found; skipping port availability check.');
+    } else if (result.status === 0) {
+      const listeners = parseLsofListeners(result.stdout?.toString() ?? '');
+      if (listeners.length > 0) {
+        const formatted = listeners.map((entry) => `  • ${entry}`).join('\n');
+        throw new Error(`Port ${port} appears to be in use by:\n${formatted}\n\nClose the process or rerun with --port <alternate>.`);
+      }
+    } else if (result.status === 1) {
+      // No listeners found; lsof returns exit code 1 in this case.
+    } else if (result.stderr) {
+      console.warn(`lsof reported an unexpected error while checking port ${port}: ${result.stderr.toString().trim()}`);
+    }
+  }
+
+  if (port < 1024 && typeof process.getuid === 'function' && process.getuid() !== 0) {
+    console.warn(`Port ${port} is privileged. Docker will require elevated permissions on some systems; consider choosing a port >=1024 via --port.`);
+  }
+}
+
+function parseLsofListeners(output) {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length <= 1) {
+    return [];
+  }
+
+  const summaries = [];
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const tokens = line.split(/\s+/);
+    if (tokens.length < 9) {
+      summaries.push(line);
+      continue;
+    }
+
+    const [command, pid, user, fd, type, device, sizeOff, node, name, ...rest] = tokens;
+    const address = [name, ...rest].join(' ').replace('(LISTEN)', '').trim();
+    const descriptor = `${command} (pid ${pid}, user ${user}) listening on ${address || name}`;
+    summaries.push(descriptor);
+  }
+
+  return summaries;
+}
+
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    stdio: options.stdio ?? 'inherit',
+    cwd: options.cwd ?? repoRoot,
+    env: options.env ?? process.env,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const joined = [command, ...args].join(' ');
+    throw new Error(`${joined} exited with code ${result.status}`);
+  }
+
+  return result;
+}
+
+function ensureEnvFile() {
+  if (!existsSync(envPath)) {
+    if (!existsSync(envExamplePath)) {
+      throw new Error('Missing .env.example – cannot bootstrap .env');
+    }
+
+    copyFileSync(envExamplePath, envPath);
+    console.log('Created .env from .env.example');
+  }
+}
+
+function upsertEnvValue(key, value) {
+  const original = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+  const lines = original.split(/\r?\n/);
+  const keyPattern = new RegExp(`^${key}=`);
+  let updated = false;
+
+  const next = lines.map((line) => {
+    if (keyPattern.test(line)) {
+      updated = true;
+      return `${key}=${value}`;
+    }
+    return line;
+  });
+
+  if (!updated) {
+    next.push(`${key}=${value}`);
+  }
+
+  const normalised = next.filter((line, index, arr) => !(index === arr.length - 1 && line.trim() === '' && arr[index - 1]?.trim() === '')).join('\n');
+  writeFileSync(envPath, normalised.endsWith('\n') ? normalised : `${normalised}\n`, 'utf8');
+}
+
+function isIpAddress(value) {
+  if (!value) {
+    return false;
+  }
+
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
+}
+
+function detectLanIp() {
+  const interfaces = os.networkInterfaces?.();
+  if (!interfaces) {
+    return undefined;
+  }
+
+  const candidates = [];
+  for (const value of Object.values(interfaces)) {
+    if (!Array.isArray(value)) {
+      continue;
+    }
+
+    for (const details of value) {
+      if (details && details.family === 'IPv4' && details.address && !details.internal) {
+        candidates.push(details.address);
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const sortScore = (address) => {
+    if (/^192\.168\./.test(address)) {
+      return 3;
+    }
+    if (/^10\./.test(address)) {
+      return 2;
+    }
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(address)) {
+      return 1;
+    }
+    return 0;
+  };
+
+  candidates.sort((a, b) => sortScore(b) - sortScore(a));
+  return candidates[0];
+}
+
+function resolveHostsFile() {
+  if (process.platform === 'win32') {
+    const systemRoot = process.env.SystemRoot || 'C:/Windows';
+    return path.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts');
+  }
+  return '/etc/hosts';
+}
+
+function checkHostsEntry(host, { writeHosts = false } = {}) {
+  const hostsFile = resolveHostsFile();
+
+  try {
+    if (!existsSync(hostsFile)) {
+      console.warn(`Unable to locate hosts file at ${hostsFile}. Please add an entry mapping ${host} manually.`);
+      return;
+    }
+
+    const content = readFileSync(hostsFile, 'utf8');
+    const hasEntry = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .some((line) => line && !line.startsWith('#') && line.split(/\s+/).includes(host));
+
+    if (hasEntry) {
+      console.log(`Hosts entry for ${host} already present.`);
+    } else {
+      const envLanIp = process.env.ANDROID_PROXY_LAN_IP?.trim();
+      const detectedLanIp = detectLanIp();
+      const suggestedIp = envLanIp || detectedLanIp || '127.0.0.1';
+      const lanMessage = suggestedIp === '127.0.0.1'
+        ? 'Replace 127.0.0.1 with your machine’s LAN IP so Android and iOS devices can resolve it.'
+        : 'Update the IP if your LAN differs.';
+
+      if (writeHosts && suggestedIp !== '127.0.0.1') {
+        if (process.platform === 'win32') {
+          console.warn(`Automatic hosts editing is not supported on Windows. Run an elevated editor and add '${suggestedIp} ${host}' manually.`);
+        } else {
+          const applied = ensureHostsEntryWritten({ host, ip: suggestedIp, hostsFile });
+          if (applied) {
+            console.log(`Added hosts entry '${suggestedIp} ${host}'.`);
+          } else {
+            console.warn(`Unable to update ${hostsFile} automatically. Please add '${suggestedIp} ${host}' manually.`);
+          }
+        }
+      }
+
+      if (!writeHosts || suggestedIp === '127.0.0.1') {
+        console.warn(`Map ${host} in ${hostsFile} to your machine's LAN IP. Suggested entry: '${suggestedIp} ${host}'. ${lanMessage}`);
+      }
+    }
+  } catch (error) {
+    console.warn(`Unable to read ${hostsFile}: ${error.message}`);
+  }
+}
+
+function ensureHostsEntryWritten({ host, ip, hostsFile }) {
+  try {
+    const content = readFileSync(hostsFile, 'utf8');
+    const lines = content.split(/\r?\n/);
+    const filtered = lines.filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        return true;
+      }
+      return !trimmed.split(/\s+/).includes(host);
+    });
+
+    const nextLines = filtered.filter((line, index, arr) => !(index === arr.length - 1 && line.trim() === ''));
+    nextLines.push(`${ip} ${host}`);
+    let updated = nextLines.join('\n');
+    if (!updated.endsWith('\n')) {
+      updated += '\n';
+    }
+
+    if (typeof process.getuid === 'function' && process.getuid() === 0) {
+      writeFileSync(hostsFile, updated, 'utf8');
+      return true;
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), 'socket-proxy-hosts-'));
+    const tempFile = path.join(tempDir, 'hosts');
+    writeFileSync(tempFile, updated, 'utf8');
+
+    const result = spawnSync('sudo', ['cp', tempFile, hostsFile], { stdio: 'inherit' });
+    if (result.error) {
+      console.warn(`sudo cp failed: ${result.error.message}`);
+    }
+    const success = !result.error && result.status === 0;
+
+    try {
+      unlinkSync(tempFile);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        console.warn(`Unable to delete temp hosts file: ${error.message}`);
+      }
+    }
+
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        console.warn(`Unable to remove temp directory: ${error.message}`);
+      }
+    }
+
+    return success;
+  } catch (error) {
+    console.warn(`Failed to update hosts file automatically: ${error.message}`);
+    return false;
+  }
+}
+
+function ensureMkcert() {
+  const result = spawnSync('mkcert', ['-help'], { stdio: 'ignore' });
+  if (result.error || result.status !== 0) {
+    throw new Error('mkcert is required. Install it via "brew install mkcert" (macOS) or see https://github.com/FiloSottile/mkcert for instructions.');
+  }
+}
+
+function ensureCerts(host, { force }) {
+  mkdirSync(certDir, { recursive: true });
+
+  if (!force && existsSync(certPath) && existsSync(keyPath)) {
+    console.log('Certificate already exists. Use --force to regenerate.');
+    return;
+  }
+
+  if (force) {
+    console.log('--force supplied, regenerating certificate.');
+  }
+
+  logStep(`Installing mkcert root CA (may prompt for password)`);
+  run('mkcert', ['-install']);
+
+  logStep(`Generating development certificate for ${host}`);
+  run('mkcert', ['-cert-file', certPath, '-key-file', keyPath, host, `*.${host}`]);
+}
+
+function assertDockerDaemon() {
+  const result = spawnSync('docker', ['info'], { stdio: 'pipe' });
+
+  if (result.error) {
+    throw new Error('Docker CLI not found. Install Docker Desktop (macOS/Windows) or ensure the "docker" binary is available.');
+  }
+
+  if (result.status !== 0) {
+    const fragments = [];
+    if (result.stderr) {
+      const text = result.stderr.toString().trim();
+      if (text) {
+        fragments.push(text);
+      }
+    }
+    if (result.stdout) {
+      const text = result.stdout.toString().trim();
+      if (text) {
+        fragments.push(text);
+      }
+    }
+
+    const details = fragments.join('\n');
+    const hint = 'Docker daemon is not reachable. Start Docker Desktop or your container runtime, then rerun this script.';
+    throw new Error(details ? `${hint}\n\nDetails: ${details}` : hint);
+  }
+}
+
+function startProxyStack({ port }) {
+  logStep(`Starting Docker proxy stack (detached on port ${port})`);
+  run('npm', ['run', 'proxy:up:ci'], {
+    env: {
+      ...process.env,
+      SOCKET_PROXY_PORT: String(port),
+    },
+  });
+}
+
+function main() {
+  logStep('Preparing environment');
+  ensureEnvFile();
+  loadEnv({ path: envPath });
+
+  const envHost = process.env.SOCKET_PROXY_HOST?.trim();
+  let host = envHost && envHost.length > 0 ? envHost : 'socket-proxy.local';
+
+  if (hostOverride && hostOverride.length > 0) {
+    host = hostOverride;
+    console.log(`Using host override: ${hostOverride}`);
+  }
+
+  host = host.trim() || 'socket-proxy.local';
+
+  const defaultPort = 443;
+  let port = normalisePort(portOverride ?? process.env.SOCKET_PROXY_PORT?.trim());
+  if (port === undefined) {
+    port = defaultPort;
+  }
+
+  const proxyUrl = `https://${host}${port === 443 ? '' : `:${port}`}`;
+
+  logStep(`Normalising .env for host ${host}`);
+  upsertEnvValue('SOCKET_PROXY_HOST', host);
+  upsertEnvValue('SOCKET_PROXY_PORT', String(port));
+  upsertEnvValue('SOCKET_IO_PROXY_URL', proxyUrl);
+  upsertEnvValue('VITE_SOCKET_PROXY_URL', proxyUrl);
+
+  process.env.SOCKET_PROXY_HOST = host;
+  process.env.SOCKET_PROXY_PORT = String(port);
+  process.env.SOCKET_IO_PROXY_URL = proxyUrl;
+  process.env.VITE_SOCKET_PROXY_URL = proxyUrl;
+
+  const existingLanIp = process.env.ANDROID_PROXY_LAN_IP?.trim();
+  const detectedLanIp = !isIpAddress(host) ? detectLanIp() : undefined;
+
+  if (detectedLanIp) {
+    if (existingLanIp !== detectedLanIp) {
+      upsertEnvValue('ANDROID_PROXY_LAN_IP', detectedLanIp);
+      console.log(`Detected LAN IP ${detectedLanIp} and recorded it in .env (ANDROID_PROXY_LAN_IP).`);
+    }
+    process.env.ANDROID_PROXY_LAN_IP = detectedLanIp;
+  } else if (!existingLanIp && !isIpAddress(host)) {
+    console.warn('Unable to detect a LAN IP automatically. Set ANDROID_PROXY_LAN_IP in .env if your emulator needs a host mapping.');
+  }
+
+  ensureMkcert();
+  ensureCerts(host, { force });
+
+  logStep('Checking hosts file');
+  checkHostsEntry(host, { writeHosts });
+
+  if (!noStart) {
+    logStep(`Checking port availability for ${port}`);
+    checkPortAvailability(port);
+    logStep('Verifying Docker daemon');
+    assertDockerDaemon();
+    startProxyStack({ port });
+    console.log(`\n✅ Proxy ready at ${proxyUrl}`);
+  } else {
+    console.log(`\n⚠️  Skipping Docker startup (--no-start). Run "npm run proxy:up" when you're ready to launch the stack (target port ${port}).`);
+  }
+
+  console.log('\nNext steps:');
+  if (noStart) {
+    console.log('  • Start the proxy manually with "npm run proxy:up" (or rerun without --no-start).');
+    console.log('  • After it is running, use "npm run proxy:logs" to monitor Nginx.');
+  } else {
+    console.log('  • Run "npm run proxy:logs" in another terminal to monitor Nginx.');
+  }
+  console.log('  • Ensure your Android emulator/iOS simulator trusts the mkcert root CA.');
+  console.log('  • From example-app/, run "npm install" (first time) then "npm run test:android" or "npm run test:ios".');
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`\n❌ Setup failed: ${error.message}`);
+  process.exitCode = 1;
+}
