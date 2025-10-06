@@ -15,10 +15,10 @@
     "test:ios": "node ./scripts/run-mobile.mjs ios"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
     "@capacitor/core": "^7.4.3",
-    "@zenzig/capacitor-socket-io": "file:..",
     "@capacitor/ios": "^7.4.3",
-    "@capacitor/android": "^7.4.3"
+    "@zenzig/capacitor-socket-io": "github:zenzig/capacitor-socket-io#main"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.3",

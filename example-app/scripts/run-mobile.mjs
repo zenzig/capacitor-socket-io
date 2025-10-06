@@ -1,13 +1,16 @@
-#!/usr/bin/env node
 import { config as loadEnv } from 'dotenv';
 import path from 'node:path';
+import os from 'node:os';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'child_process';
 import { createInterface } from 'readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { computeHostsUpdate } from '../../scripts/lib/hosts-utils.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const appRoot = path.resolve(__dirname, '..');
 
 // Load environment variables from the example app directory and repository root without overriding existing values.
 const ENV_LOCATIONS = [
@@ -24,28 +27,34 @@ for (const candidate of ENV_LOCATIONS) {
   }
 }
 
-const { proxyHost, proxyLanIp } = resolveProxyConfig();
-
-const platform = process.argv[2];
-if (!['android', 'ios'].includes(platform)) {
-  console.error('Usage: node ./scripts/run-mobile.mjs <android|ios>');
-  process.exit(1);
-}
-
-const rl = createInterface({ input, output });
 const useShell = process.platform === 'win32';
+let proxyHost;
+let proxyLanIp;
+let rl;
 
-try {
-  if (platform === 'android') {
-    await runAndroid();
-  } else {
-    await runIOS();
+async function main() {
+  ({ proxyHost, proxyLanIp } = resolveProxyConfig());
+
+  const platform = process.argv[2];
+  if (!['android', 'ios'].includes(platform)) {
+    console.error('Usage: node ./scripts/run-mobile.mjs <android|ios>');
+    process.exit(1);
   }
-} catch (error) {
-  console.error(`\n${platform} run failed:`, error?.message ?? error);
-  process.exitCode = 1;
-} finally {
-  rl.close();
+
+  rl = createInterface({ input, output });
+
+  try {
+    if (platform === 'android') {
+      await runAndroid();
+    } else {
+      await runIOS();
+    }
+  } catch (error) {
+    console.error(`\n${platform} run failed:`, error?.message ?? error);
+    process.exitCode = 1;
+  } finally {
+    rl?.close();
+  }
 }
 
 async function runAndroid() {
@@ -209,13 +218,15 @@ async function promptForChoice(message, options) {
 
 function runCapacitor(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', args, {
-      cwd: process.cwd(),
+    const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    const proc = spawn(command, args, {
+      cwd: appRoot,
       stdio: 'inherit',
       shell: useShell,
     });
 
-    child.on('exit', (code) => {
+    proc.on('error', reject);
+    proc.on('close', (code) => {
       if (code === 0) {
         resolve();
       } else {
@@ -225,10 +236,6 @@ function runCapacitor(args) {
   });
 }
 
-async function configureAndRunAndroid(targetId) {
-  await configureAndroidHosts(targetId);
-  await runCapacitor(['cap', 'run', 'android', '--target', targetId]);
-}
 
 async function configureAndroidHosts(targetId) {
   if (!proxyHost || !proxyLanIp || proxyHost === proxyLanIp) {
@@ -263,9 +270,32 @@ async function configureAndroidHosts(targetId) {
         }`,
       );
     }
-    const entry = `${proxyLanIp} ${proxyHost}`;
-    runAdb(['shell', `grep -q '${entry}' /system/etc/hosts || echo '${entry}' >> /system/etc/hosts`]);
-    console.log('  ✔ Host mapping applied');
+    const originalHosts = runAdb(['shell', 'cat', '/system/etc/hosts']);
+    const { content: updatedHosts, changed } = computeHostsUpdate({
+      originalContent: originalHosts,
+      host: proxyHost,
+      ip: proxyLanIp,
+    });
+
+    if (!changed) {
+      console.log('  ✔ Host mapping already up to date');
+      return;
+    }
+
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), 'cap-socket-io-hosts-'));
+    const tempFile = path.join(tempDir, 'hosts');
+    try {
+      writeFileSync(tempFile, updatedHosts, 'utf8');
+      runAdb(['push', tempFile, '/system/etc/hosts']);
+      runAdb(['shell', 'chmod', '644', '/system/etc/hosts']);
+      console.log('  ✔ Host mapping updated');
+    } finally {
+      try {
+        rmSync(tempDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.warn('  ⚠️  Unable to remove temporary directory:', cleanupError?.message ?? cleanupError);
+      }
+    }
   } catch (error) {
     console.warn('  ⚠️  Unable to update /system/etc/hosts automatically. Proceeding anyway.', error?.message ?? error);
   }
@@ -303,3 +333,21 @@ function extractLanIp(url) {
 
   return /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ? host : undefined;
 }
+
+function setProxyConfigForTests({ host, lanIp }) {
+  proxyHost = host;
+  proxyLanIp = lanIp;
+}
+
+const modulePath = fileURLToPath(import.meta.url);
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
+const isCliExecution = invokedPath === modulePath;
+
+if (isCliExecution) {
+  main().catch((error) => {
+    console.error('\nrun-mobile failed:', error?.message ?? error);
+    process.exitCode = 1;
+  });
+}
+
+export { configureAndroidHosts, resolveProxyConfig, setProxyConfigForTests };
