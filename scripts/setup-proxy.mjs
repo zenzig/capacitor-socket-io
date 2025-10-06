@@ -1,10 +1,10 @@
-#!/usr/bin/env node
 import { spawnSync } from 'child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config as loadEnv } from 'dotenv';
+import { computeHostsUpdate, extractHostIps } from './lib/hosts-utils.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -262,6 +262,11 @@ function detectLanIp() {
 }
 
 function resolveHostsFile() {
+  const override = process.env.SOCKET_PROXY_HOSTS_PATH?.trim();
+  if (override) {
+    return override;
+  }
+
   if (process.platform === 'win32') {
     const systemRoot = process.env.SystemRoot || 'C:/Windows';
     return path.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts');
@@ -279,70 +284,84 @@ function checkHostsEntry(host, { writeHosts = false } = {}) {
     }
 
     const content = readFileSync(hostsFile, 'utf8');
-    const hasEntry = content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .some((line) => line && !line.startsWith('#') && line.split(/\s+/).includes(host));
+    const existingIps = extractHostIps(content, host);
+    const envLanIp = process.env.ANDROID_PROXY_LAN_IP?.trim();
+    const detectedLanIp = detectLanIp();
+    const suggestedIp = envLanIp || detectedLanIp || '127.0.0.1';
 
-    if (hasEntry) {
-      console.log(`Hosts entry for ${host} already present.`);
-    } else {
-      const envLanIp = process.env.ANDROID_PROXY_LAN_IP?.trim();
-      const detectedLanIp = detectLanIp();
-      const suggestedIp = envLanIp || detectedLanIp || '127.0.0.1';
+    if (writeHosts && suggestedIp !== '127.0.0.1') {
+      if (process.platform === 'win32') {
+        console.warn(`Automatic hosts editing is not supported on Windows. Run an elevated editor and add '${suggestedIp} ${host}' manually.`);
+        return;
+      }
+
+      const result = ensureHostsEntryWritten({ host, ip: suggestedIp, hostsFile, initialContent: content });
+
+      if (!result.success) {
+        console.warn(`Unable to update ${hostsFile} automatically. Please add '${suggestedIp} ${host}' manually.`);
+        return;
+      }
+
+      if (result.changed) {
+        const previousIps = result.previousIps.filter((ip) => ip && ip !== suggestedIp);
+        if (previousIps.length > 0) {
+          console.log(`Updated hosts entry for ${host}: replaced ${previousIps.join(', ')} with ${suggestedIp}.`);
+        } else if (result.previousIps.length > 1) {
+          console.log(`Condensed multiple hosts entries for ${host} to '${suggestedIp} ${host}'.`);
+        } else if (result.previousIps.length === 0) {
+          console.log(`Added hosts entry '${suggestedIp} ${host}'.`);
+        } else {
+          console.log(`Refreshed hosts entry for ${host}.`);
+        }
+      } else {
+        console.log(`Hosts entry for ${host} already points to ${suggestedIp}.`);
+      }
+      return;
+    }
+
+    if (existingIps.length === 0) {
       const lanMessage = suggestedIp === '127.0.0.1'
         ? 'Replace 127.0.0.1 with your machine’s LAN IP so Android and iOS devices can resolve it.'
         : 'Update the IP if your LAN differs.';
-
-      if (writeHosts && suggestedIp !== '127.0.0.1') {
-        if (process.platform === 'win32') {
-          console.warn(`Automatic hosts editing is not supported on Windows. Run an elevated editor and add '${suggestedIp} ${host}' manually.`);
-        } else {
-          const applied = ensureHostsEntryWritten({ host, ip: suggestedIp, hostsFile });
-          if (applied) {
-            console.log(`Added hosts entry '${suggestedIp} ${host}'.`);
-          } else {
-            console.warn(`Unable to update ${hostsFile} automatically. Please add '${suggestedIp} ${host}' manually.`);
-          }
-        }
-      }
-
-      if (!writeHosts || suggestedIp === '127.0.0.1') {
-        console.warn(`Map ${host} in ${hostsFile} to your machine's LAN IP. Suggested entry: '${suggestedIp} ${host}'. ${lanMessage}`);
-      }
+      console.warn(`Map ${host} in ${hostsFile} to your machine's LAN IP. Suggested entry: '${suggestedIp} ${host}'. ${lanMessage}`);
+      return;
     }
+
+    if (existingIps.length > 1) {
+      console.warn(`Multiple IPs found for ${host} (${existingIps.join(', ')}). Remove stale entries so only the active mapping remains.`);
+      return;
+    }
+
+    const currentIp = existingIps[0];
+    if (suggestedIp !== '127.0.0.1' && currentIp !== suggestedIp) {
+      console.warn(`Hosts entry for ${host} currently points to ${currentIp}. Update it to ${suggestedIp} or rerun with --write-hosts.`);
+      return;
+    }
+
+    console.log(`Hosts entry for ${host} already present.`);
   } catch (error) {
     console.warn(`Unable to read ${hostsFile}: ${error.message}`);
   }
 }
 
-function ensureHostsEntryWritten({ host, ip, hostsFile }) {
+function ensureHostsEntryWritten({ host, ip, hostsFile, initialContent }) {
   try {
-    const content = readFileSync(hostsFile, 'utf8');
-    const lines = content.split(/\r?\n/);
-    const filtered = lines.filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) {
-        return true;
-      }
-      return !trimmed.split(/\s+/).includes(host);
-    });
+    const content = initialContent ?? readFileSync(hostsFile, 'utf8');
+    const { content: updatedContent, changed, previousIps } = computeHostsUpdate({ originalContent: content, host, ip });
+    const priorIps = [...previousIps];
 
-    const nextLines = filtered.filter((line, index, arr) => !(index === arr.length - 1 && line.trim() === ''));
-    nextLines.push(`${ip} ${host}`);
-    let updated = nextLines.join('\n');
-    if (!updated.endsWith('\n')) {
-      updated += '\n';
+    if (!changed) {
+      return { changed: false, success: true, previousIps: priorIps };
     }
 
     if (typeof process.getuid === 'function' && process.getuid() === 0) {
-      writeFileSync(hostsFile, updated, 'utf8');
-      return true;
+      writeFileSync(hostsFile, updatedContent, 'utf8');
+      return { changed: true, success: true, previousIps: priorIps };
     }
 
     const tempDir = mkdtempSync(path.join(os.tmpdir(), 'socket-proxy-hosts-'));
     const tempFile = path.join(tempDir, 'hosts');
-    writeFileSync(tempFile, updated, 'utf8');
+    writeFileSync(tempFile, updatedContent, 'utf8');
 
     const result = spawnSync('sudo', ['cp', tempFile, hostsFile], { stdio: 'inherit' });
     if (result.error) {
@@ -366,10 +385,10 @@ function ensureHostsEntryWritten({ host, ip, hostsFile }) {
       }
     }
 
-    return success;
+    return { changed: true, success, previousIps: priorIps };
   } catch (error) {
     console.warn(`Failed to update hosts file automatically: ${error.message}`);
-    return false;
+    return { changed: false, success: false, previousIps: [] };
   }
 }
 
@@ -512,9 +531,19 @@ function main() {
   console.log('  • From example-app/, run "npm install" (first time) then "npm run test:android" or "npm run test:ios".');
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`\n❌ Setup failed: ${error.message}`);
-  process.exitCode = 1;
+const isCliExecution = (() => {
+  const invoked = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
+  const current = fileURLToPath(import.meta.url);
+  return invoked === current;
+})();
+
+if (isCliExecution) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`\n❌ Setup failed: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
+
+export { checkHostsEntry, ensureHostsEntryWritten, resolveHostsFile };

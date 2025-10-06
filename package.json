@@ -42,16 +42,20 @@
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api CapacitorSocketIOPlugin --output-readme README.md --output-json dist/docs.json",
-    "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.mjs",
+  "build": "npm run docgen && npm run build:dist",
+  "build:dist": "npm run clean && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
-  "proxy:up": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build",
-  "proxy:down": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down",
-  "proxy:logs": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
-  "proxy:up:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build -d",
+    "proxy:up": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build",
+    "proxy:down": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down",
+    "proxy:logs": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
+    "proxy:up:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build -d",
   "proxy:down:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down --volumes --remove-orphans",
     "proxy:setup": "node ./scripts/setup-proxy.mjs",
-    "prepublishOnly": "npm run build"
+  "test": "vitest run",
+  "test:watch": "vitest",
+  "prepare": "npm run build:dist",
+  "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
@@ -70,7 +74,8 @@
     "rimraf": "^6.0.1",
     "rollup": "^4.30.1",
     "swiftlint": "^2.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.3"
   },
   "dependencies": {
     "socket.io-client": "^4.7.5"

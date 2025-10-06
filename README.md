@@ -13,10 +13,17 @@ servers from Android and iOS with a shared JavaScript API.
 
 ## Installation
 
+Until the package is published on npm, install it straight from this repository (pin to the
+`main` branch or a specific commit/tag).
+
 ```bash
-npm install @zenzig/capacitor-socket-io
+npm install github:zenzig/capacitor-socket-io#main
 npx cap sync
 ```
+
+Prefer working from a local clone? Run `npm pack` in this repo after `npm run build`, then install
+the generated tarball in your Capacitor app (`npm install ../capacitor-socket-io/capacitor-socket-io-*.tgz`).
+We’ll update these instructions once the plugin is available on the npm registry.
 
 The sync step installs the native Android/iOS sources into your Capacitor project.
 
@@ -25,49 +32,54 @@ The sync step installs the native Android/iOS sources into your Capacitor projec
 
 ## Quick start
 
-```typescript
-import { CapacitorSocketIO } from '@zenzig/capacitor-socket-io';
+Follow these steps to exercise the plugin using the bundled Docker proxy and the example app.
 
-// 1. Register any events you care about **before** connecting.
-const coreEvents = ['connect', 'disconnect', 'connect_error', 'pong'];
-await CapacitorSocketIO.removeAllListeners();
-await Promise.all(
-	coreEvents.map(async (event) => {
-		await CapacitorSocketIO.on({ event });
-		await CapacitorSocketIO.addListener(event, ({ event: name, args }) => {
-			console.log(`[socket] ${name}`, ...args);
-		});
-	}),
-);
+1. **Install dependencies (root):**
 
-// 2. Connect to your Socket.IO server.
-await CapacitorSocketIO.connect({
-	url: 'https://socket-proxy.local',
-	options: {
-		path: '/socket.io',
-		transports: ['websocket'],
-		reconnection: true,
-		allowSelfSigned: false, // Dev-only. Runtime guard rejects this flag in production builds.
-	},
-});
+	```bash
+	npm install
+	```
 
-// 3. Emit events.
-await CapacitorSocketIO.emit({
-	event: 'ping',
-	data: { message: 'Hello from Capacitor' },
-});
+2. **Launch the HTTPS proxy:**
 
-// 4. Disconnect when you are done.
-await CapacitorSocketIO.disconnect();
-```
+	```bash
+	npm run proxy:setup -- --write-hosts
+	```
 
-> **Tip:** The dynamic `on({ event })` call must be invoked for every event you want to receive from
-> the native layer (including custom events). Once registered, listeners added with
-> `addListener(event, cb)` will fire for the lifetime of the socket until you call
-> `removeAllListeners()`.
+	This command:
 
-> **Guardrails:** Wrap `allowSelfSigned` behind an environment check (for example
-> `process.env.NODE_ENV !== 'production'`). Release builds throw if the flag is enabled.
+	- generates/refreshes mkcert certificates under `docker/certs/`
+	- updates `.env` with `SOCKET_PROXY_HOST`, `SOCKET_IO_PROXY_URL`, `VITE_SOCKET_PROXY_URL`, and a detected `ANDROID_PROXY_LAN_IP`
+	- rewrites `/etc/hosts` (on macOS/Linux) so only one entry for `socket-proxy.local` remains, then starts the Docker proxy stack detached
+
+	Add `--no-start` if you only want to refresh certificates and `.env`, or `--port 4443` / `--host dev.example.com` to customise the endpoint.
+
+3. **Build and sync the example app:**
+
+	```bash
+	cd example-app
+	npm install
+	npm run build
+	npx cap sync android ios
+	```
+
+4. **Run the Android demo (auto host-mapping included):**
+
+	```bash
+	npm run test:android
+	```
+
+	The launcher boots/targets an emulator or device, ensures `/system/etc/hosts` contains a single mapping for `socket-proxy.local`, installs the app, and connects to the proxy.
+
+5. **Optional – run on iOS:**
+
+	```bash
+	npm run test:ios
+	```
+
+That’s it—you now have a native client talking to the Socket.IO test server exposed by Docker. Keep the proxy running while iterating; when you’re done, stop it with `npm run proxy:down`.
+
+> **Using the plugin directly:** Once the proxy is up, you can import the plugin in your own app and point `CapacitorSocketIO.connect({ url: process.env.VITE_SOCKET_PROXY_URL })` at the generated HTTPS endpoint. Remember to call `CapacitorSocketIO.on({ event })` before adding listeners for each event you care about.
 
 ## API surface
 
@@ -107,41 +119,26 @@ await CapacitorSocketIO.emit({ event: 'sum', args: [1, 2, 3] });
 
 ## Example app
 
-An interactive playground lives under `example-app/` and mirrors the plugin’s API. It is built with
-Vite and ready for both web and native testing.
+An interactive playground lives under `example-app/`. It mirrors the plugin’s API, ships with a
+Socket.IO server contract test, and backs the native demo launched in the quick start. The build and
+sync commands in step 3 above prepare both Android and iOS projects; rerun them whenever you change
+the plugin source.
 
-```bash
-cd example-app
-npm install
-npm run build
-```
+- **Run the web preview:** `npm run dev` (Vite dev server, reads `VITE_SOCKET_PROXY_URL`).
+- **Rebuild after plugin edits:** `npm run build` to compile the Capacitor plugin and refresh the
+	native projects.
+- **Regenerate native projects:** `npx cap sync android ios` if you touch Capacitor config, add
+	platforms, or upgrade dependencies.
 
-To launch the native demo on Android:
+The Android launcher (`npm run test:android`) and iOS launcher (`npm run test:ios`) both:
 
-```bash
-npx cap sync android
-npx cap run android
-```
+1. Load proxy settings from the repository root `.env`.
+2. Ensure a single `socket-proxy.local` entry exists on the device/emulator by rewriting the hosts
+	 file via the shared helper.
+3. Install the app bundle and connect to the HTTPS proxy started earlier.
 
-The UI includes controls to connect, emit events, and view the forwarded event log in real time. It
-defaults to `https://socket-proxy.local/` as a reminder to supply your own TLS proxy endpoint.
-
-Populate the following variables in the repository’s `.env` file to align the playground with the
-bundled Docker proxy. Running `npm run proxy:setup` writes these values for you:
-
-```env
-SOCKET_PROXY_PORT=443
-VITE_SOCKET_PROXY_URL=https://socket-proxy.local
-ANDROID_PROXY_LAN_IP=192.168.0.28
-```
-
-The Android launcher (`npm run test:android`) now adds the required hosts entry automatically when
-`ANDROID_PROXY_LAN_IP` is set. Use the commands below only if you need to perform the mapping
-manually. It reads the repository root `.env` even when run from `example-app/`, so rerun the
-launcher after network changes to refresh the device mapping:
-
-> **Custom port:** If you run the proxy on a port other than 443, append it to any URLs above—for
-> example `VITE_SOCKET_PROXY_URL=https://socket-proxy.local:4443`.
+You rarely need to touch `/etc/hosts` manually now. Only follow the steps below if you are
+debugging a device that prevents remounting or you are experimenting with a custom hostname/port.
 
 ```bash
 adb root
@@ -150,10 +147,12 @@ adb shell "echo '192.168.0.28 socket-proxy.local' >> /system/etc/hosts"
 adb reboot
 ```
 
-> **Emulator images:** Pick a *Google APIs* system image (avoid the Google Play Store flavour) when
-> creating AVDs. These images allow `/system` to be remounted read/write. The launcher boots new
-> emulators with `-writable-system`, but pre-existing emulators must be restarted with that flag for
-> the automatic host mapping to succeed.
+> **Custom port:** If you run the proxy on a port other than 443, append it to `VITE_SOCKET_PROXY_URL`
+> (e.g. `https://socket-proxy.local:4443`) and restart the proxy plus the launcher.
+
+> **Emulator images:** Pick a *Google APIs* system image (avoid Google Play Store images) so the
+> launcher can remount `/system` read/write. It boots new emulators with `-writable-system`, but
+> pre-existing emulators must be restarted with that flag for the automatic host mapping to succeed.
 
 ### Testing with a TLS Socket.IO proxy
 
@@ -206,16 +205,17 @@ For a quick bootstrap, the repository includes a Docker Compose stack under `doc
 path is:
 
 ```bash
-npm run proxy:setup
+npm run proxy:setup -- --write-hosts
 ```
 
 The setup script checks for mkcert, generates `docker/certs/socket-proxy.pem`, normalises `.env`,
-and starts the containers detached. Ensure the Docker daemon is running beforehand. Prefer to run
-steps manually (or on a host without Docker)? Append `--no-start` to skip launching the containers,
-and start them later with `npm run proxy:up`. Need a different hostname? Add
-`--host dev.example.com`. Port 443 already taken locally? Use `--port 4443` (or another free port);
-the script updates `.env`, rewrites the proxy URL with the new port, and passes it to Docker
-Compose.
+rewrites `/etc/hosts` so only one entry for `socket-proxy.local` remains, and starts the containers
+detached. Ensure the Docker daemon is running beforehand. Prefer to run steps manually (or on a host
+without Docker)? Append `--no-start` to skip launching the containers, and start them later with
+`npm run proxy:up`. Need a different hostname? Add `--host dev.example.com`. Port 443 already taken
+locally? Use `--port 4443` (or another free port); the script updates `.env`, rewrites the proxy URL
+with the new port, and passes it to Docker Compose. Skip the hosts rewrite with `--no-write-hosts`
+if you are managing entries yourself.
 
 The stack exposes HTTPS on the port you choose (defaults to 443) and self-hosts the upstream
 Socket.IO test server. Shut it down with `npm run proxy:down` and watch logs with
