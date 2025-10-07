@@ -5,9 +5,17 @@ and comes with a very minimal shell for building an app.
 
 ### Running this example
 
-Install dependencies and build the web assets first:
+The example consumes the plugin from the parent directory (`"@zenzig/capacitor-socket-io": "file:.."`).
+Install the plugin's dependencies and build its `dist/` output from the repository root first—`npm install`
+at the top level will trigger the plugin's `prepare` script automatically. Then change into the example
+workspace and install its own dependencies. All commands in the following sections assume you remain inside
+`example-app/`:
 
 ```bash
+# from the repository root
+npm install
+
+cd example-app
 npm install
 npm run build
 ```
@@ -17,6 +25,10 @@ Then sync the native projects so they pick up the latest `@zenzig/capacitor-sock
 ```bash
 npx cap sync ios android
 ```
+
+Visit `https://socket-proxy.local/` (served by the Docker proxy stack) to open the matching web console. It shares
+the same Socket.IO session as the native app so you can observe broadcasts, presence updates, and ping/pong traffic
+across all three clients.
 
 > **Note:** The playground defaults to `https://socket-proxy.local/`. Replace it with your own
 > HTTPS proxy hostname by setting `VITE_SOCKET_PROXY_URL=https://socket-proxy.local` (or your

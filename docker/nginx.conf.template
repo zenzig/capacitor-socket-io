@@ -2,6 +2,9 @@ server {
     listen 443 ssl;
     server_name ${SOCKET_PROXY_HOST};
 
+    root /usr/share/nginx/html;
+    index index.html;
+
     ssl_certificate     /etc/nginx/certs/socket-proxy.pem;
     ssl_certificate_key /etc/nginx/certs/socket-proxy-key.pem;
 
@@ -20,7 +23,6 @@ server {
     }
 
     location / {
-        return 200 '{"status":"ok"}';
-        add_header Content-Type application/json;
+        try_files $uri $uri/ /index.html;
     }
 }

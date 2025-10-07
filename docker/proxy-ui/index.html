@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Socket Proxy Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="app" aria-live="polite">
+      <header class="app__header" aria-label="Connection overview">
+        <div class="status">
+          <span id="connectionIndicator" class="status__dot status__dot--offline" aria-hidden="true"></span>
+          <div>
+            <div id="connectionStatusLabel" class="status__headline">Disconnected</div>
+            <div id="socketIdLabel" class="status__meta">No active socket.</div>
+          </div>
+        </div>
+        <p>
+          This console mirrors the native playground so you can see iOS, Android, and Web clients interacting
+          through the same Socket.IO proxy.
+        </p>
+      </header>
+
+      <section class="card" aria-labelledby="device-alias-heading">
+        <div class="card__header">
+          <h2 id="device-alias-heading">Device alias</h2>
+          <p>Shared with other clients when broadcasting messages.</p>
+        </div>
+        <div class="card__body">
+          <label class="field" for="deviceAliasInput">
+            <span class="field__label">Alias</span>
+            <input id="deviceAliasInput" type="text" autocomplete="off" />
+          </label>
+          <div class="card__actions">
+            <button id="saveAliasBtn" class="button secondary" type="button">Save alias</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="proxy-connection-heading">
+        <div class="card__header">
+          <h2 id="proxy-connection-heading">Proxy connection</h2>
+          <p>Connect this web client to your HTTPS Socket.IO proxy.</p>
+        </div>
+        <div class="card__body">
+          <label class="field" for="serverUrl">
+            <span class="field__label">Server URL</span>
+            <span class="field__description">Defaults to the current origin.</span>
+            <input id="serverUrl" type="url" inputmode="url" spellcheck="false" autocomplete="off" />
+          </label>
+          <label class="field field--switch" for="allowSelfSigned">
+            <input id="allowSelfSigned" type="checkbox" />
+            <div>
+              <span class="field__label">Allow self-signed certificates (development only)</span>
+              <p class="field__description">Desktop browsers still require you to trust the certificate in your keychain, but the toggle mirrors the native apps.</p>
+            </div>
+          </label>
+          <div class="card__actions">
+            <button id="connectBtn" class="button primary" type="button">Connect</button>
+            <button id="disconnectBtn" class="button secondary" type="button" disabled>Disconnect</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="ping-heading">
+        <div class="card__header">
+          <h2 id="ping-heading">Ping / Pong health check</h2>
+          <p>Send a heartbeat that includes this device's identity and an optional message.</p>
+        </div>
+        <div class="card__body">
+          <label class="field" for="pingMessage">
+            <span class="field__label">Optional ping message</span>
+            <textarea id="pingMessage" placeholder="Hello from the proxy console"></textarea>
+          </label>
+          <div class="card__actions">
+            <button id="pingBtn" class="button primary" type="button" disabled>Send ping</button>
+            <div id="pingResult" class="callout callout--muted" role="status">Waiting for first ping.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="broadcast-heading">
+        <div class="card__header">
+          <h2 id="broadcast-heading">Broadcast messages</h2>
+          <p>Share a message with every connected client.</p>
+        </div>
+        <div class="card__body">
+          <label class="field" for="broadcastMessage">
+            <span class="field__label">Message</span>
+            <textarea id="broadcastMessage" placeholder="Broadcast to all devices"></textarea>
+          </label>
+          <div class="card__actions">
+            <button id="broadcastBtn" class="button primary" type="button" disabled>Send broadcast</button>
+          </div>
+          <ul id="broadcastFeed" class="feed" aria-live="polite"></ul>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="presence-heading">
+        <div class="card__header">
+          <h2 id="presence-heading">Presence</h2>
+          <p>Active clients registered with the proxy.</p>
+        </div>
+        <div class="card__body">
+          <ul id="presenceList" class="presence-list" aria-live="polite"></ul>
+        </div>
+      </section>
+
+      <section class="card card--surface" aria-labelledby="timeline-heading">
+        <div class="card__header">
+          <h2 id="timeline-heading">Event timeline</h2>
+          <p>Raw events from the Socket.IO session.</p>
+        </div>
+        <div class="card__body">
+          <div class="card__actions">
+            <button id="clearTimelineBtn" class="button tertiary" type="button">Clear timeline</button>
+          </div>
+          <ul id="timeline" class="timeline"></ul>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

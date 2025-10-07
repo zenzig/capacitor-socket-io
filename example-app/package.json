@@ -17,8 +17,8 @@
   "dependencies": {
     "@capacitor/android": "^7.4.3",
     "@capacitor/core": "^7.4.3",
-    "@capacitor/ios": "^7.4.3",
-    "@zenzig/capacitor-socket-io": "github:zenzig/capacitor-socket-io#main"
+  "@capacitor/ios": "^7.4.3",
+  "@zenzig/capacitor-socket-io": "file:.."
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.3",

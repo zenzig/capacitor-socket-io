@@ -18,6 +18,7 @@ services:
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./certs:/etc/nginx/certs:ro
+      - ./proxy-ui:/usr/share/nginx/html:ro
     environment:
       SOCKET_PROXY_HOST: ${SOCKET_PROXY_HOST:-socket-proxy.local}
     ports:

@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en" dir="ltr" class="hydrated">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
-    <title>Example Capacitor App</title>
+    <title>Capacitor Socket.IO Playground</title>
     <meta
       name="viewport"
       content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
@@ -10,173 +10,515 @@
     <meta name="format-detection" content="telephone=no" />
     <style>
       :root {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        line-height: 1.5;
         color: #0f172a;
         background: #f1f5f9;
+        --color-bg: #f1f5f9;
+        --color-card: #ffffff;
+        --color-surface: #f8fafc;
+        --color-border: #e2e8f0;
+        --color-muted: #64748b;
+        --color-primary: #2563eb;
+        --color-primary-dark: #1d4ed8;
+        --color-success: #16a34a;
+        --color-danger: #dc2626;
+        --color-warning: #d97706;
+        --color-info: #0ea5e9;
+        --shadow-soft: 0 12px 32px rgba(15, 23, 42, 0.12);
+        --radius-lg: 24px;
+        --radius-md: 16px;
+        --radius-sm: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
       }
 
       body {
         margin: 0;
+        background: var(--color-bg);
+        min-height: 100%;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
 
-      main {
-        max-width: 720px;
-        margin: 2rem auto;
-        padding: 0 1rem 3rem;
+      main.app {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem calc(4rem + env(safe-area-inset-bottom, 0px));
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .app__header {
+        background: var(--color-card);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-soft);
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
       }
 
       h1 {
-        margin-bottom: 0.25rem;
+        margin: 0;
+        font-size: 1.75rem;
+        font-weight: 700;
+      }
+
+      h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1.3rem;
+        font-weight: 600;
       }
 
       p {
-        margin-top: 0;
+        margin: 0;
+        color: var(--color-muted);
       }
 
-      .panel {
-        background: #fff;
-        border-radius: 12px;
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .status__dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        transition: background-color 160ms ease, box-shadow 160ms ease;
+        box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+      }
+
+      .status__dot--offline {
+        background: var(--color-danger);
+        box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+      }
+
+      .status__dot--online {
+        background: var(--color-success);
+        box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18);
+      }
+
+      .status__headline {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      .status__meta {
+        font-size: 0.85rem;
+      }
+
+      .identity {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .card {
+        background: var(--color-card);
+        border-radius: var(--radius-lg);
         padding: 1.5rem;
-        margin-top: 1.5rem;
-        box-shadow: 0 10px 30px -20px rgba(15, 23, 42, 0.4);
+        box-shadow: var(--shadow-soft);
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
       }
 
-      .panel h2 {
-        margin-top: 0;
+      .card--surface {
+        background: var(--color-surface);
+      }
+
+      .card__header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .card__body {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .card__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
       }
 
       .field {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        margin-bottom: 1rem;
       }
 
-      .field span {
+      .field--switch {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .field__label {
         font-weight: 600;
-        font-size: 0.9rem;
+        color: #0f172a;
       }
 
-      input,
+      .field__description {
+        font-size: 0.85rem;
+      }
+
+      input[type='text'],
+      input[type='url'],
       textarea {
-        border-radius: 8px;
-        border: 1px solid #cbd5f5;
-        padding: 0.75rem;
-        font: inherit;
-        background: #f8fafc;
+        border: 1px solid transparent;
+        border-radius: var(--radius-md);
+        padding: 0.75rem 0.9rem;
+        font-size: 1rem;
+        outline: none;
+        background: var(--color-surface);
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+        color: #0f172a;
+      }
+
+      input:focus,
+      textarea:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
       }
 
       textarea {
         resize: vertical;
+        min-height: 100px;
       }
 
-      .actions {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-
-      button {
-        font: inherit;
+      button.button {
         border: none;
-        border-radius: 999px;
-        padding: 0.65rem 1.5rem;
+        border-radius: var(--radius-md);
+        padding: 0.75rem 1.25rem;
+        font-size: 1rem;
+        font-weight: 600;
         cursor: pointer;
-        background: #2563eb;
-        color: #fff;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease;
       }
 
-      button.secondary {
-        background: #e2e8f0;
+      .button.primary {
+        background: var(--color-primary);
+        color: #fff;
+      }
+
+      .button.primary:hover {
+        background: var(--color-primary-dark);
+      }
+
+      .button.secondary {
+        background: var(--color-surface);
+        color: #0f172a;
+        border: 1px solid var(--color-border);
+      }
+
+      .button.tertiary {
+        background: transparent;
+        color: var(--color-primary);
+        border: 1px solid transparent;
+      }
+
+      button.button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+        transform: none !important;
+        box-shadow: none !important;
+      }
+
+      .callout {
+        padding: 0.85rem 1rem;
+        border-radius: var(--radius-md);
+        font-size: 0.95rem;
+        background: rgba(100, 116, 139, 0.08);
         color: #0f172a;
       }
 
-      button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 20px -14px rgba(37, 99, 235, 0.8);
+      .callout--success {
+        background: rgba(22, 163, 74, 0.15);
+        color: #14532d;
       }
 
-      .field-group {
-        display: grid;
-        gap: 1rem;
+      .callout--danger {
+        background: rgba(220, 38, 38, 0.15);
+        color: #7f1d1d;
       }
 
-      @media (min-width: 640px) {
-        .field-group {
-          grid-template-columns: 200px 1fr;
-          align-items: start;
-        }
+      .callout--info {
+        background: rgba(14, 165, 233, 0.18);
+        color: #0c4a6e;
       }
 
-      .header {
+      .callout--muted {
+        background: rgba(148, 163, 184, 0.15);
+        color: #475569;
+      }
+
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .feed__empty,
+      .presence-list__empty {
+        font-size: 0.95rem;
+        color: var(--color-muted);
+      }
+
+      .feed__item {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
+        flex-direction: column;
+        gap: 0.45rem;
+        padding: 0.85rem 0;
+        border-bottom: 1px solid var(--color-border);
       }
 
-      .log {
-        min-height: 220px;
-        max-height: 320px;
-        overflow: auto;
-        background: #0f172a;
-        color: #e2e8f0;
-        border-radius: 12px;
-        padding: 1rem;
-        font-family: 'Fira Code', 'SFMono-Regular', ui-monospace, monospace;
+      .feed__header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: baseline;
+      }
+
+      .feed__time {
+        font-size: 0.8rem;
+        color: var(--color-muted);
+        margin-left: auto;
+      }
+
+      .feed__message {
+        font-size: 1rem;
+        color: #0f172a;
+        word-break: break-word;
+      }
+
+      .presence-list__item {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .presence-list__header {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .presence-list__meta {
+        font-size: 0.85rem;
+        color: var(--color-muted);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-radius: 999px;
+        padding: 0.15rem 0.5rem;
+        background: rgba(37, 99, 235, 0.15);
+        color: var(--color-primary);
+      }
+
+      .badge--android {
+        background: rgba(16, 185, 129, 0.18);
+        color: #047857;
+      }
+
+      .badge--ios {
+        background: rgba(59, 130, 246, 0.18);
+        color: #1d4ed8;
+      }
+
+      .badge--web {
+        background: rgba(249, 115, 22, 0.18);
+        color: #c2410c;
+      }
+
+      .badge--unknown {
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+      }
+
+      .timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+      }
+
+      .timeline__item {
+        background: #fff;
+        border-radius: var(--radius-md);
+        padding: 0.85rem 0.95rem;
+        border: 1px solid var(--color-border);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .timeline__header {
+        display: flex;
+        gap: 0.5rem;
+        align-items: baseline;
+      }
+
+      .timeline__event {
+        font-weight: 600;
+        color: #0f172a;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+      }
+
+      .timeline__time {
+        margin-left: auto;
+        font-size: 0.75rem;
+        color: var(--color-muted);
+      }
+
+      .timeline__payload {
+        margin: 0;
         font-size: 0.85rem;
         line-height: 1.4;
+        background: var(--color-surface);
+        border-radius: var(--radius-sm);
+        padding: 0.75rem;
+        overflow-x: auto;
+      }
+
+      @media (min-width: 720px) {
+        .app__header {
+          flex-direction: row;
+          align-items: flex-start;
+          justify-content: space-between;
+        }
+
+        .identity {
+          max-width: 360px;
+        }
+
+        .card__actions {
+          justify-content: flex-start;
+        }
       }
     </style>
   </head>
   <body>
-    <main>
-      <h1>Capacitor Socket.IO Plugin Playground</h1>
-      <p>
-        Use this page to exercise the native Socket.IO bridge on Android and iOS. Point it at your own TLS
-        Socket.IO endpoint (or the proxy outlined in the docs), emit events, and observe everything the
-        native layer forwards back to JavaScript.
-      </p>
+    <main class="app">
+      <header class="app__header">
+        <div class="status">
+          <span id="connectionIndicator" class="status__dot status__dot--offline" aria-hidden="true"></span>
+          <div>
+            <p id="connectionStatusLabel" class="status__headline">Disconnected</p>
+            <p id="socketIdLabel" class="status__meta">No active socket.</p>
+          </div>
+        </div>
 
-      <section class="panel">
-        <h2>Connection</h2>
-        <label class="field">
-          <span>Server URL</span>
-          <input type="text" id="serverUrl" placeholder="https://socket-proxy.local/" />
-        </label>
-        <div class="actions">
-          <button id="connectBtn">Connect</button>
-          <button id="disconnectBtn" class="secondary">Disconnect</button>
+        <div class="identity">
+          <div class="field">
+            <label class="field__label" for="deviceAliasInput">Device alias</label>
+            <input id="deviceAliasInput" type="text" maxlength="32" autocomplete="off" />
+            <p class="field__description">Shared with other clients when broadcasting messages.</p>
+          </div>
+          <button id="saveAliasBtn" class="button secondary" type="button" disabled>Save alias</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <header class="card__header">
+          <h2>Proxy connection</h2>
+          <p>Connect the native plugin to your HTTPS Socket.IO proxy.</p>
+        </header>
+        <div class="card__body">
+          <label class="field">
+            <span class="field__label">Server URL</span>
+            <input type="url" id="serverUrl" inputmode="url" placeholder="https://socket-proxy.local/" />
+          </label>
+          <label class="field field--switch">
+            <input id="allowSelfSigned" type="checkbox" />
+            <span class="field__label">Allow self-signed certificates (development only)</span>
+          </label>
+        </div>
+        <div class="card__actions">
+          <button id="connectBtn" class="button primary" type="button">Connect</button>
+          <button id="disconnectBtn" class="button secondary" type="button" disabled>Disconnect</button>
         </div>
       </section>
 
-      <section class="panel">
-        <h2>Emit Event</h2>
-        <div class="field-group">
+      <section class="card">
+        <header class="card__header">
+          <h2>Ping / Pong health check</h2>
+          <p>Send a heartbeat that includes this device’s identity and an optional message.</p>
+        </header>
+        <div class="card__body">
           <label class="field">
-            <span>Event name</span>
-            <input type="text" id="eventName" value="ping" />
+            <span class="field__label">Optional ping message</span>
+            <textarea id="pingMessage" rows="3" placeholder="Hello from my device"></textarea>
           </label>
-          <label class="field">
-            <span>Payload (JSON)</span>
-            <textarea id="eventPayload" rows="4">{"msg": "Hello from Capacitor native"}</textarea>
-          </label>
+          <div id="pingResult" class="callout callout--muted">No ping sent yet.</div>
         </div>
-        <div class="actions">
-          <button id="emitBtn">Emit Event</button>
+        <div class="card__actions">
+          <button id="pingBtn" class="button primary" type="button" disabled>Send ping</button>
+          <button id="clearTimelineBtn" class="button tertiary" type="button">Clear timeline</button>
         </div>
       </section>
 
-      <section class="panel">
-        <div class="header">
-          <h2>Event Log</h2>
-          <button id="clearLogBtn" class="secondary">Clear</button>
+      <section class="card">
+        <header class="card__header">
+          <h2>Broadcast message</h2>
+          <p>Deliver a message to every connected client (web, Android, and iOS).</p>
+        </header>
+        <div class="card__body">
+          <label class="field">
+            <span class="field__label">Message</span>
+            <textarea id="broadcastMessage" rows="3" placeholder="What should everyone receive?"></textarea>
+          </label>
+          <ul id="broadcastFeed" class="feed">
+            <li class="feed__empty">No broadcast messages yet.</li>
+          </ul>
         </div>
-        <pre id="eventLog" class="log"></pre>
+        <div class="card__actions">
+          <button id="broadcastBtn" class="button primary" type="button" disabled>Broadcast message</button>
+        </div>
+      </section>
+
+      <section class="card card--surface">
+        <header class="card__header">
+          <h2>Connected clients</h2>
+          <p>Live presence across native and web environments.</p>
+        </header>
+        <ul id="presenceList" class="presence-list">
+          <li class="presence-list__empty">No other clients are connected.</li>
+        </ul>
+      </section>
+
+      <section class="card card--surface">
+        <header class="card__header">
+          <h2>Event timeline</h2>
+          <p>Everything the plugin receives from the proxy.</p>
+        </header>
+        <ul id="timeline" class="timeline"></ul>
       </section>
     </main>
-
     <script type="module">
       const FALLBACK_PROXY_URL = 'https://socket-proxy.local/';
 
