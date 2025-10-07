@@ -54,6 +54,9 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 
 	Add `--no-start` if you only want to refresh certificates and `.env`, or `--port 4443` / `--host dev.example.com` to customise the endpoint.
 
+		With the stack running, open [https://socket-proxy.local/](https://socket-proxy.local/) in your browser to access the
+		web console. It mirrors the native playground UI so you can watch iOS, Android, and web clients interact in real time.
+
 3. **Build and sync the example app:**
 
 	```bash
