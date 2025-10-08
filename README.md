@@ -11,6 +11,38 @@ servers from Android and iOS with a shared JavaScript API.
 - 📡 Real-time event forwarding: subscribe once and receive everything in JavaScript
 - 🌐 Web fallback that uses `socket.io-client` so your app behaves the same in the browser
 
+## Gallery
+
+<figure>
+	<img src="./1.png" alt="iOS simulator timeline showing ping and pong events with latency metadata" width="960" />
+	<figcaption><strong>Native iOS timeline.</strong> The simulator surfaces ping/pong payloads from the proxy, including device identity, origin, and measured latency.</figcaption>
+</figure>
+
+<figure>
+	<img src="./2.png" alt="Android emulator displaying broadcast feed, presence list, and event timeline" width="960" />
+	<figcaption><strong>Android broadcast and presence.</strong> The Material-styled view renders the same feed, presence roster, and timeline shared across platforms.</figcaption>
+</figure>
+
+<figure>
+	<img src="./3.png" alt="Web proxy console mirroring native activity with raw Socket.IO events" width="960" />
+	<figcaption><strong>Proxy console.</strong> The HTTPS dashboard mirrors every Socket.IO event so you can inspect raw payloads alongside the native apps.</figcaption>
+</figure>
+
+<figure>
+	<img src="./4.png" alt="Side-by-side montage of iOS, Android, and web clients connected simultaneously" width="960" />
+	<figcaption><strong>Three-way sync.</strong> iOS, Android, and the proxy UI stay in lockstep while broadcasting messages and presence updates.</figcaption>
+</figure>
+
+<figure>
+	<img src="./6.png" alt="Broadcast composer form with alias controls and connection status" width="960" />
+	<figcaption><strong>Broadcast composer.</strong> Alias editing, ping composer, and connection status indicators make it easy to test flows end-to-end.</figcaption>
+</figure>
+
+<figure>
+	<img src="./7.png" alt="Certificate trust toggle and proxy configuration inputs in the example app" width="960" />
+	<figcaption><strong>Proxy configuration.</strong> Toggle self-signed certificates, point at alternative hosts, and reconnect without leaving the playground.</figcaption>
+</figure>
+
 ## Installation
 
 Until the package is published on npm, install it straight from this repository (pin to the

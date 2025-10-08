@@ -3,6 +3,9 @@
 This app was created using [`@capacitor/create-app`](https://github.com/ionic-team/create-capacitor-app),
 and comes with a very minimal shell for building an app.
 
+> Want to see it in action first? Check the “Gallery” section in the repository root `README.md` for
+> screenshots of the iOS, Android, and proxy experiences running side by side.
+
 ### Running this example
 
 The example consumes the plugin from the parent directory (`"@zenzig/capacitor-socket-io": "file:.."`).
