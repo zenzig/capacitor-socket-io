@@ -449,7 +449,7 @@ async function sendPing() {
         socketId: state.socketId,
     };
 
-    addTimelineEntry('ping', payload);
+    addTimelineEntry('ping:sent', payload);
 
     if (ui.pingResult) {
         ui.pingResult.textContent = 'Ping sent. Waiting for pong…';
@@ -554,6 +554,9 @@ function routeEvent(event, payload) {
         case 'disconnect':
             handleDisconnectEvent(payload);
             break;
+        case 'ping':
+            handleTransportPing(firstArgument(payload));
+            break;
         case 'pong':
             handlePongEvent(firstArgument(payload));
             break;
@@ -608,6 +611,18 @@ function handleDisconnectEvent(payload) {
     addTimelineEntry('disconnect', { reason });
 }
 
+function handleTransportPing(body) {
+    if (!body || (Array.isArray(body) && body.length === 0)) {
+        return;
+    }
+
+    if (typeof body === 'object' && Object.keys(body).length === 0) {
+        return;
+    }
+
+    addTimelineEntry('ping', body);
+}
+
 function handlePongEvent(body) {
     const pong = normalisePong(body);
     addTimelineEntry('pong', pong);
@@ -657,11 +672,71 @@ function handleIdentityAck(body) {
     addTimelineEntry('identify:ack', body);
 }
 
+function snapshotTimelineDetails(details) {
+    if (details === undefined) {
+        return null;
+    }
+
+    if (details === null) {
+        return null;
+    }
+
+    if (typeof details === 'string' || typeof details === 'number' || typeof details === 'boolean') {
+        return details;
+    }
+
+    if (typeof details === 'bigint') {
+        return details.toString();
+    }
+
+    if (details instanceof Date) {
+        return details.toISOString();
+    }
+
+    if (Array.isArray(details)) {
+        return details.map((item) => snapshotTimelineDetails(item));
+    }
+
+    if (typeof details === 'object') {
+        if (typeof structuredClone === 'function') {
+            try {
+                return structuredClone(details);
+            } catch (error) {
+                // Fall through to JSON stringify fallback
+            }
+        }
+
+        try {
+            return JSON.parse(JSON.stringify(details));
+        } catch (error) {
+            const clone = {};
+            let hasOwnProperty = false;
+
+            for (const key of Reflect.ownKeys(details)) {
+                if (typeof key === 'string') {
+                    hasOwnProperty = true;
+                    try {
+                        clone[key] = snapshotTimelineDetails(details[key]);
+                    } catch (innerError) {
+                        clone[key] = `[[unserializable: ${String(innerError)}]]`;
+                    }
+                }
+            }
+
+            if (hasOwnProperty) {
+                return clone;
+            }
+        }
+    }
+
+    return String(details ?? '');
+}
+
 function addTimelineEntry(event, details) {
     const entry = {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         event,
-        details,
+        details: snapshotTimelineDetails(details),
         timestamp: new Date().toISOString(),
     };
 
