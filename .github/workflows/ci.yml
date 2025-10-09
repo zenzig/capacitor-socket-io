@@ -25,7 +25,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+          run: npm ci
+          env:
+            ROLLUP_DISABLE_NATIVE: '1'
+            npm_config_rollup_disable_native: 'true'
 
       - name: Run ESLint
         run: npm run eslint
@@ -52,7 +55,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+          run: npm ci
+          env:
+            ROLLUP_DISABLE_NATIVE: '1'
+            npm_config_rollup_disable_native: 'true'
 
       - name: Generate short-lived TLS certificates
         run: |
@@ -96,7 +102,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Node dependencies (for shared tooling)
-        run: npm ci
+          run: npm ci
+          env:
+            ROLLUP_DISABLE_NATIVE: '1'
+            npm_config_rollup_disable_native: 'true'
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -129,7 +138,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+          run: npm ci
+          env:
+            ROLLUP_DISABLE_NATIVE: '1'
+            npm_config_rollup_disable_native: 'true'
 
       - name: Install SwiftLint
         run: brew install swiftlint
