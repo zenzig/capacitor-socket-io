@@ -18,7 +18,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -190,11 +193,22 @@ public class CapacitorSocketIOPlugin extends Plugin {
             opts.path = options.optString("path", opts.path);
         }
 
+        String queryString = null;
         Object queryObject = options.opt("query");
         if (queryObject instanceof String) {
-            opts.query = (String) queryObject;
+            queryString = (String) queryObject;
         } else if (queryObject instanceof JSONObject) {
-            opts.query = toQueryString((JSONObject) queryObject);
+            queryString = toQueryString((JSONObject) queryObject);
+        }
+
+        JSONObject authObject = normaliseAuthPayload(options.opt("auth"));
+        if (authObject != null && authObject.length() > 0) {
+            tryInjectAuth(opts, authObject);
+            queryString = mergeQueryStrings(queryString, toQueryString(authObject));
+        }
+
+        if (queryString != null && !queryString.trim().isEmpty()) {
+            opts.query = queryString;
         }
 
         JSONArray transportsArray = options.optJSONArray("transports");
@@ -284,6 +298,101 @@ public class CapacitorSocketIOPlugin extends Plugin {
             Logger.warn(LOG_TAG, "Failed to url-encode value: " + value);
             return value;
         }
+    }
+
+    private JSONObject normaliseAuthPayload(Object raw) {
+        if (raw == null || raw == JSONObject.NULL) {
+            return null;
+        }
+
+        if (raw instanceof JSONObject) {
+            return (JSONObject) raw;
+        }
+
+        if (raw instanceof String) {
+            String token = ((String) raw).trim();
+            if (token.isEmpty()) {
+                return null;
+            }
+
+            JSONObject json = new JSONObject();
+            try {
+                json.put("token", token);
+            } catch (JSONException ignore) {
+                return null;
+            }
+            return json;
+        }
+
+        if (raw instanceof Number || raw instanceof Boolean) {
+            JSONObject json = new JSONObject();
+            try {
+                json.put("token", raw);
+            } catch (JSONException ignore) {
+                return null;
+            }
+            return json;
+        }
+
+        return null;
+    }
+
+    private void tryInjectAuth(IO.Options opts, JSONObject authObject) {
+        Map<String, Object> authMap = jsonToMap(authObject);
+        if (authMap.isEmpty()) {
+            return;
+        }
+
+        try {
+            Field authField = IO.Options.class.getField("auth");
+            Object existing = authField.get(opts);
+            if (existing instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> existingMap = (Map<String, Object>) existing;
+                existingMap.putAll(authMap);
+            } else {
+                authField.set(opts, authMap);
+            }
+        } catch (NoSuchFieldException | IllegalAccessException ignored) {
+            // Older socket.io-client releases do not expose IO.Options.auth; fall back to query
+            // parameters which the proxy also accepts.
+        }
+    }
+
+    private Map<String, Object> jsonToMap(JSONObject json) {
+        Map<String, Object> map = new HashMap<>();
+        if (json == null) {
+            return map;
+        }
+
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key == null || key.trim().isEmpty()) {
+                continue;
+            }
+
+            Object value = json.opt(key);
+            if (value == JSONObject.NULL || value == null) {
+                continue;
+            }
+
+            map.put(key, value);
+        }
+
+        return map;
+    }
+
+    private String mergeQueryStrings(String base, String addition) {
+        if (addition == null || addition.trim().isEmpty()) {
+            return base;
+        }
+
+        if (base == null || base.trim().isEmpty()) {
+            return addition;
+        }
+
+        return base + '&' + addition;
     }
 
     private void configureTrustAllSsl(IO.Options opts) {

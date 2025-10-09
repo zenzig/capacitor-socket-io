@@ -18,6 +18,7 @@ public final class CapacitorSocketIO {
         public let reconnectionDelayMax: TimeInterval?
         public let path: String?
         public let query: [String: String]?
+        public let authPayload: [String: Any]?
         public let transports: [String]?
         public let allowSelfSigned: Bool
 
@@ -31,6 +32,7 @@ public final class CapacitorSocketIO {
             reconnectionDelayMax: TimeInterval? = nil,
             path: String? = nil,
             query: [String: String]? = nil,
+            authPayload: [String: Any]? = nil,
             transports: [String]? = nil,
             allowSelfSigned: Bool = false
         ) {
@@ -43,6 +45,7 @@ public final class CapacitorSocketIO {
             self.reconnectionDelayMax = reconnectionDelayMax
             self.path = path
             self.query = query
+            self.authPayload = authPayload
             self.transports = transports
             self.allowSelfSigned = allowSelfSigned
         }
@@ -176,13 +179,24 @@ public final class CapacitorSocketIO {
         attachCoreListeners(socket: client)
         attachDynamicListeners(socket: client)
 
+        let payload = configuration.authPayload
         if let timeout = configuration.timeout, timeout > 0 {
             let seconds = max(0, timeout / 1000.0)
-            client.connect(timeoutAfter: seconds) { [weak self] in
-                self?.dispatch(eventName: "connect_timeout", data: [])
+            if let payload, !payload.isEmpty {
+                client.connect(withPayload: payload, timeoutAfter: seconds) { [weak self] in
+                    self?.dispatch(eventName: "connect_timeout", data: [])
+                }
+            } else {
+                client.connect(timeoutAfter: seconds) { [weak self] in
+                    self?.dispatch(eventName: "connect_timeout", data: [])
+                }
             }
         } else {
-            client.connect()
+            if let payload, !payload.isEmpty {
+                client.connect(withPayload: payload)
+            } else {
+                client.connect()
+            }
         }
     }
 
@@ -212,7 +226,7 @@ public final class CapacitorSocketIO {
             config.insert(.path(path))
         }
 
-        if let params = configuration.query {
+        if let params = combinedQueryParams(for: configuration) {
             config.insert(.connectParams(params))
         }
 
@@ -253,6 +267,51 @@ public final class CapacitorSocketIO {
         }
 
         return config
+    }
+
+    private func combinedQueryParams(for configuration: ConnectConfiguration) -> [String: String]? {
+        var params: [String: String] = configuration.query ?? [:]
+
+        if let authParams = convertAuthPayloadToQuery(configuration.authPayload) {
+            for (key, value) in authParams where params[key] == nil {
+                params[key] = value
+            }
+        }
+
+        return params.isEmpty ? nil : params
+    }
+
+    private func convertAuthPayloadToQuery(_ payload: [String: Any]?) -> [String: String]? {
+        guard let payload else { return nil }
+
+        var converted: [String: String] = [:]
+        for (key, value) in payload {
+            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedKey.isEmpty, let stringValue = stringValue(forAuth: value) else { continue }
+            converted[trimmedKey] = stringValue
+        }
+
+        return converted.isEmpty ? nil : converted
+    }
+
+    private func stringValue(forAuth value: Any) -> String? {
+        switch value {
+        case is NSNull:
+            return nil
+        case let string as String:
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case let number as NSNumber:
+            if CFNumberIsFloatType(number) {
+                return String(describing: number.doubleValue)
+            }
+            return String(describing: number.intValue)
+        case let bool as Bool:
+            return bool ? "true" : "false"
+        default:
+            let description = String(describing: value)
+            return description.isEmpty ? nil : description
+        }
     }
 
     private static var isDebugBuild: Bool {

@@ -22,6 +22,7 @@ const SUBSCRIBED_EVENTS = Object.freeze([...new Set([...CORE_EVENTS, ...CUSTOM_E
 
 const DEVICE_ID_STORAGE_KEY = 'socketio.example.deviceId';
 const DEVICE_ALIAS_STORAGE_KEY = 'socketio.example.deviceAlias';
+const AUTH_TOKEN_STORAGE_KEY = 'socketio.example.authToken';
 const BROADCAST_HISTORY_LIMIT = 50;
 const TIMELINE_LIMIT = 150;
 const FALLBACK_PROXY_URL = 'https://socket-proxy.local/';
@@ -39,6 +40,7 @@ const state = {
     isConnecting: false,
     socketId: undefined,
     serverUrl: undefined,
+    authToken: '',
 };
 
 const ui = {};
@@ -47,6 +49,7 @@ let pingSequence = 0;
 
 state.identity = loadIdentity();
 state.allowSelfSigned = !state.isProduction;
+state.authToken = loadAuthToken();
 
 function detectProduction() {
     if (typeof process !== 'undefined' && typeof process.env?.NODE_ENV === 'string') {
@@ -117,6 +120,18 @@ function safeWriteStorage(key, value) {
     }
 }
 
+function safeRemoveStorage(key) {
+    try {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+
+        localStorage.removeItem(key);
+    } catch (error) {
+        console.warn(`Unable to remove ${key}`, error);
+    }
+}
+
 function loadIdentity() {
     const platform = getPlatformKey();
     let deviceId = safeReadStorage(DEVICE_ID_STORAGE_KEY);
@@ -134,6 +149,27 @@ function loadIdentity() {
     return { deviceId, alias, origin: platform };
 }
 
+function normaliseAuthToken(value) {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function loadAuthToken() {
+    const storedToken = normaliseAuthToken(safeReadStorage(AUTH_TOKEN_STORAGE_KEY));
+    if (storedToken) {
+        return storedToken;
+    }
+
+    const configuredToken =
+        normaliseAuthToken(appConfig.authToken) ?? normaliseAuthToken(appConfig.socketProxyAuthToken);
+
+    return configuredToken ?? '';
+}
+
 function cacheDom() {
     ui.connectionIndicator = document.getElementById('connectionIndicator');
     ui.connectionStatusLabel = document.getElementById('connectionStatusLabel');
@@ -141,6 +177,7 @@ function cacheDom() {
     ui.deviceAliasInput = document.getElementById('deviceAliasInput');
     ui.saveAliasButton = document.getElementById('saveAliasBtn');
     ui.serverUrlInput = document.getElementById('serverUrl');
+    ui.authTokenInput = document.getElementById('authToken');
     ui.allowSelfSignedToggle = document.getElementById('allowSelfSigned');
     ui.connectButton = document.getElementById('connectBtn');
     ui.disconnectButton = document.getElementById('disconnectBtn');
@@ -159,6 +196,7 @@ function initialiseDom() {
     cacheDom();
     hydrateServerUrl();
     hydrateAliasControls();
+    hydrateAuthTokenField();
     hydrateSelfSignedToggle();
     attachUiListeners();
     setConnected(false);
@@ -228,6 +266,15 @@ function hydrateAliasControls() {
     }
 }
 
+function hydrateAuthTokenField() {
+    if (!ui.authTokenInput) {
+        return;
+    }
+
+    ui.authTokenInput.value = state.authToken ?? '';
+    ui.authTokenInput.placeholder = 'Paste JWT for proxy auth';
+}
+
 function hydrateSelfSignedToggle() {
     if (!ui.allowSelfSignedToggle) {
         return;
@@ -248,6 +295,8 @@ function attachUiListeners() {
     ui.pingButton?.addEventListener('click', sendPing);
     ui.broadcastButton?.addEventListener('click', sendBroadcast);
     ui.clearTimelineButton?.addEventListener('click', clearTimeline);
+    ui.authTokenInput?.addEventListener('input', onAuthTokenInputChange);
+    ui.authTokenInput?.addEventListener('blur', persistAuthToken);
 
     ui.broadcastMessageInput?.addEventListener('input', updateBroadcastButtonState);
     ui.broadcastMessageInput?.addEventListener('keydown', (event) => {
@@ -283,6 +332,39 @@ function onAliasInputChange() {
 
     const trimmed = ui.deviceAliasInput.value.trim();
     ui.saveAliasButton.disabled = trimmed.length === 0 || trimmed === state.identity.alias;
+}
+
+function onAuthTokenInputChange() {
+    if (!ui.authTokenInput) {
+        return;
+    }
+
+    state.authToken = ui.authTokenInput.value;
+}
+
+function persistAuthToken(nextValue) {
+    let candidate;
+
+    if (typeof nextValue === 'string') {
+        candidate = nextValue;
+    } else if (typeof nextValue?.target?.value === 'string') {
+        candidate = nextValue.target.value;
+    } else if (ui.authTokenInput) {
+        candidate = ui.authTokenInput.value;
+    }
+
+    const trimmed = normaliseAuthToken(candidate ?? '') ?? '';
+    state.authToken = trimmed;
+
+    if (ui.authTokenInput && ui.authTokenInput.value !== trimmed) {
+        ui.authTokenInput.value = trimmed;
+    }
+
+    if (trimmed.length > 0) {
+        safeWriteStorage(AUTH_TOKEN_STORAGE_KEY, trimmed);
+    } else {
+        safeRemoveStorage(AUTH_TOKEN_STORAGE_KEY);
+    }
 }
 
 function saveAlias() {
@@ -387,9 +469,15 @@ async function connect() {
     const targetUrl = normaliseUrl(ui.serverUrlInput?.value);
     state.serverUrl = targetUrl;
 
+    const authToken = normaliseAuthToken(ui.authTokenInput?.value ?? state.authToken) ?? '';
+    persistAuthToken(authToken);
+    const authPayload = authToken.length > 0 ? { token: authToken } : undefined;
+    const queryPayload = authPayload ? { token: authPayload.token } : undefined;
+
     addTimelineEntry('connect:requested', {
         url: targetUrl,
         allowSelfSigned: state.allowSelfSigned,
+        authTokenProvided: authToken.length > 0,
     });
 
     setConnectingState(true);
@@ -403,6 +491,8 @@ async function connect() {
                 transports: ['websocket'],
                 reconnection: true,
                 timeout: 10_000,
+                auth: authPayload,
+                query: queryPayload,
             },
         });
     } catch (error) {

@@ -32,7 +32,9 @@ This folder contains a two-container stack that mirrors a production deployment:
    configured (defaults to 443).
 
 5. Export or record `SOCKET_IO_PROXY_URL=https://socket-proxy.local` (append `:<port>` if you chose a
-   non-default port) — the script writes this automatically when you use `npm run proxy:setup`.
+   non-default port) — the script writes this automatically when you use `npm run proxy:setup`. Set
+   `SOCKET_SERVER_AUTH_SECRET` (or the passphrase variant described below) if you want the upstream
+   server to require JWTs during the Socket.IO handshake.
 6. When you are done, stop the stack with:
 
    ```bash
@@ -40,3 +42,42 @@ This folder contains a two-container stack that mirrors a production deployment:
    ```
 
 Use `npm run proxy:logs` to follow Nginx output while debugging.
+
+## Enforcing JWT authentication
+
+The upstream server can validate JSON Web Tokens before accepting connections. Add the following
+environment variables to `.env` (or export them manually) before running `npm run proxy:up`:
+
+- `SOCKET_SERVER_AUTH_SECRET` – raw signing secret shared with clients, or
+- `SOCKET_SERVER_AUTH_PASSPHRASE` plus optional `SOCKET_SERVER_AUTH_SALT` – derives a secret using
+   PBKDF2 via `pbkdf2-password-hash`.
+- Optional: `SOCKET_SERVER_AUTH_ISSUER`, `SOCKET_SERVER_AUTH_AUDIENCE`,
+   `SOCKET_SERVER_AUTH_CLOCK_TOLERANCE` (seconds) to tighten claim validation.
+
+Clients must send a JWT in one of three locations: `socket.handshake.auth.token`, a `token` query
+parameter, or an `Authorization: Bearer <token>` header. The decoded claims are exposed to event
+handlers as `socket.auth` for additional authorization checks.
+
+To mint a token for local testing, run:
+
+```bash
+SOCKET_SERVER_AUTH_SECRET=unit-test-secret node --input-type=module <<'NODE'
+import jwt from 'jsonwebtoken';
+
+const secret = process.env.SOCKET_SERVER_AUTH_SECRET;
+const token = jwt.sign(
+   { sub: 'developer', scopes: ['presence'] },
+   secret,
+   {
+      expiresIn: '15m',
+      issuer: process.env.SOCKET_SERVER_AUTH_ISSUER ?? 'socket-proxy.local',
+      audience: process.env.SOCKET_SERVER_AUTH_AUDIENCE ?? 'socket-proxy-clients',
+   },
+);
+
+console.log(token);
+NODE
+```
+
+Then supply the token via `auth: { token }` when instantiating `socket.io-client` or include it as a
+Bearer token header when connecting from custom tooling.

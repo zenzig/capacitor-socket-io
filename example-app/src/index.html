@@ -453,6 +453,11 @@
             <span class="field__label">Server URL</span>
             <input type="url" id="serverUrl" inputmode="url" placeholder="https://socket-proxy.local/" />
           </label>
+          <label class="field">
+            <span class="field__label">Auth token (optional)</span>
+            <input type="text" id="authToken" autocomplete="off" placeholder="Paste JWT for proxy auth" />
+            <p class="field__description">Forwarded via <code>auth.token</code> and a <code>token</code> query parameter.</p>
+          </label>
           <label class="field field--switch">
             <input id="allowSelfSigned" type="checkbox" />
             <span class="field__label">Allow self-signed certificates (development only)</span>

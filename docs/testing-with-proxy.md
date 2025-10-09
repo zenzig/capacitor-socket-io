@@ -50,6 +50,62 @@ performs the following steps (you can run them manually if you prefer):
 
 5. When finished, stop it with `npm run proxy:down`. Use `npm run proxy:logs` to tail Nginx output.
 
+### Add token authentication (optional)
+
+Set the following variables in `.env` before starting the stack if you want every connection to
+present a JWT:
+
+- `SOCKET_SERVER_AUTH_SECRET` to provide a static signing key, or
+- `SOCKET_SERVER_AUTH_PASSPHRASE` (optionally with `SOCKET_SERVER_AUTH_SALT`) to derive a key using
+  PBKDF2 at boot.
+- Optional hardening knobs: `SOCKET_SERVER_AUTH_ISSUER`, `SOCKET_SERVER_AUTH_AUDIENCE`, and
+  `SOCKET_SERVER_AUTH_CLOCK_TOLERANCE` (seconds).
+
+Clients can include the token under `auth.token`, as a `token` query parameter, or in an
+`Authorization: Bearer <token>` header. The decoded claims are attached to `socket.auth` so event
+handlers can authorise per-identity behaviour. A quick Node helper for minting local tokens:
+
+```bash
+SOCKET_SERVER_AUTH_SECRET=dev-secret node --input-type=module <<'NODE'
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign(
+  { sub: 'local-client', scopes: ['presence'] },
+  process.env.SOCKET_SERVER_AUTH_SECRET,
+  {
+    expiresIn: '10m',
+    issuer: process.env.SOCKET_SERVER_AUTH_ISSUER ?? 'socket-proxy.local',
+    audience: process.env.SOCKET_SERVER_AUTH_AUDIENCE ?? 'socket-proxy-clients',
+  },
+);
+
+console.log(token);
+NODE
+```
+
+Feed the token to `socket.io-client` via `auth: { token }` (or an `Authorization` header) to satisfy
+the middleware.
+
+The bundled Capacitor playground now exposes an **Auth token** field on the proxy connection card
+that stores the JWT locally and forwards it through both the Socket.IO `auth.token` payload and a
+`token` query parameter. Paste the value above before tapping **Connect** on the Android or iOS
+emulator to validate secured proxy flows end-to-end.
+
+### Confirming authentication during testing
+
+Still unsure whether the proxy accepted the JWT? Try one of these lightweight checks while the
+Docker stack is running:
+
+1. **Log the raw handshake token (temporary).** Add a short `console.log(socket.handshake.auth.token)`
+  inside `io.on('connection', …)` in `docker/socket-server/socket-server.mjs` and watch
+  `npm run proxy:logs`. Remove the log afterward so tokens aren’t printed in the long term.
+2. **Inspect the decoded claims.** Every verified token is stored on `socket.auth`.
+  Running `docker compose -f docker/docker-compose.proxy.yml exec socket-server node -e "import('./socket-server.mjs'); setTimeout(()=>{ for (const [id,s] of globalThis.io.sockets.sockets) console.log(id, s.auth); }, 1000);"`
+  will print the active subjects/scopes without exposing the raw secret.
+3. **Observe the example app timeline.** Successful connections append
+  `presence:update` events that include `{ auth: { subject, scopes } }` so you can trace which
+  identity is online from the UI.
+
 The remainder of this guide explains the pieces in detail; you can follow it manually or treat it as
 reference when customising the container setup.
 
