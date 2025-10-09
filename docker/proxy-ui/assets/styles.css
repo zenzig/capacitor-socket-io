@@ -1,5 +1,11 @@
 :root {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   line-height: 1.5;
   color: #0f172a;
   background: #f1f5f9;
@@ -83,7 +89,9 @@ p {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  transition: background-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
 }
 
@@ -169,7 +177,9 @@ textarea {
   font-size: 1rem;
   outline: none;
   background: var(--color-surface);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
   color: #0f172a;
 }
 
@@ -191,7 +201,10 @@ button.button {
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  transition:
+    transform 120ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
 .button.primary {
