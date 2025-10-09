@@ -10,7 +10,7 @@ env:
   NODE_VERSION: '20'
   SOCKET_PROXY_HOST: socket-proxy.local
   SOCKET_IO_PROXY_URL: https://socket-proxy.local
-  ROLLUP_DISABLE_NATIVE: 'true'
+  ROLLUP_DISABLE_NATIVE: '1'
 
 jobs:
   lint-build:
