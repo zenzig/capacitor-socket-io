@@ -30,9 +30,14 @@ scripts/git-history-helper.mjs
 
 # Environment files
 .env
+.env.*
 
 # Local TLS certificates
 docker/certs/*.pem
+
+
+# Repomix bundles
+repomix-output.*
 
 
 

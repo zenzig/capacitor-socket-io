@@ -1,0 +1,47 @@
+# Build artefacts and caches
+dist/
+*/dist/
+.build/
+*/.build/
+*/build/
+android/**/build/
+android/.gradle/
+example-app/android/**
+example-app/dist/
+example-app/node_modules/
+node_modules/
+*/node_modules/
+coverage/
+*/coverage/
+.cache/
+*/.cache/
+
+# Generated TLS certificates and binaries
+docker/certs/
+*.pem
+*.p12
+*.keystore
+*.tgz
+*.zip
+
+# Binary assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.webp
+*.mp4
+*.mp3
+
+# Lock and log files
+*.lock
+*.log
+
+# Environment files
+.env
+.env.*
+
+# OS cruft
+.DS_Store

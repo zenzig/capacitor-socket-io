@@ -122,7 +122,8 @@ function hydrateServerUrl() {
   }
 
   const value = ui.serverUrlInput.value?.trim();
-  ui.serverUrlInput.value = value && value.length > 0 ? ensureTrailingSlash(value) : ensureTrailingSlash(state.serverUrl);
+  ui.serverUrlInput.value =
+    value && value.length > 0 ? ensureTrailingSlash(value) : ensureTrailingSlash(state.serverUrl);
   state.serverUrl = ui.serverUrlInput.value;
 }
 
