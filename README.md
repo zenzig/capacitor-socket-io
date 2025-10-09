@@ -1,11 +1,11 @@
-# @zenzig/capacitor-socket-io
+	# @zenzig/capacitor-socket-io
 
 A native Socket.IO bridge for Capacitor apps. Remove CORS headaches and talk directly to Socket.IO
 servers from Android and iOS with a shared JavaScript API.
 
 ## Features
 
-- 🔌 Native Socket.IO clients aligned with the Socket.IO 4.x protocol (Android Java client 2.1.1 / iOS Swift client 16.1.x)
+- 🔌 Native Socket.IO clients aligned with the Socket.IO 4.x protocol (Android Java client 2.1.2 / iOS Swift client 16.1.x)
 - 🧵 Background thread handling so the UI never blocks during connect/emit calls
 - 🔐 Debug-only trust-all SSL mode for development servers with self-signed certs
 - 📡 Real-time event forwarding: subscribe once and receive everything in JavaScript
@@ -114,6 +114,66 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 
 That’s it—you now have a native client talking to the Socket.IO test server exposed by Docker. Keep the proxy running while iterating; when you’re done, stop it with `npm run proxy:down`.
 
+> Paste any issued JWT into the **Auth token** field on the example app’s proxy card before tapping **Connect**. The playground persists the token locally, forwards it via both `handshake.auth.token` and a `token` query parameter, and notes in the event timeline whether authentication was supplied.
+
+## Token-based authentication
+
+The bundled Socket.IO upstream can require stateless JWTs before accepting a connection. Enable it by
+supplying one of the following environment variable sets before launching the proxy stack:
+
+- `SOCKET_SERVER_AUTH_SECRET` – raw signing secret (recommend 32+ bytes).
+- `SOCKET_SERVER_AUTH_PASSPHRASE` – human-readable passphrase that will be hashed with PBKDF2.
+	- Optional: override `SOCKET_SERVER_AUTH_SALT` (defaults to `socket-proxy-auth-salt`).
+- Optional claims enforcement: `SOCKET_SERVER_AUTH_ISSUER`, `SOCKET_SERVER_AUTH_AUDIENCE`,
+	`SOCKET_SERVER_AUTH_CLOCK_TOLERANCE` (seconds).
+
+When authentication is disabled the server behaves exactly as before. When enabled, the middleware
+expects a JWT in one of three places—`socket.handshake.auth.token`, a `token` query parameter, or an
+`Authorization: Bearer <token>` header. The decoded claims are stored on `socket.auth` so event
+handlers can make authorization decisions.
+
+### Issuing tokens for local testing
+
+Use the same secret (or passphrase + salt) to mint short-lived tokens from any environment. Here is
+an example using Node and `jsonwebtoken`:
+
+```bash
+node --input-type=module <<'NODE'
+import jwt from 'jsonwebtoken';
+
+const secret = process.env.SOCKET_SERVER_AUTH_SECRET ?? 'changeme-in-prod';
+const token = jwt.sign(
+	{ sub: 'dev-client', scopes: ['presence'] },
+	secret,
+	{
+		expiresIn: '10m',
+		issuer: process.env.SOCKET_SERVER_AUTH_ISSUER ?? 'socket-proxy.local',
+		audience: process.env.SOCKET_SERVER_AUTH_AUDIENCE ?? 'socket-proxy-clients',
+	},
+);
+
+console.log(token);
+NODE
+```
+
+Pass the token to the client via the `auth` option:
+
+```ts
+import { io } from 'socket.io-client';
+
+const socket = io('https://socket-proxy.local', {
+	path: '/socket.io',
+	auth: { token: process.env.SOCKET_PROXY_TOKEN },
+});
+```
+
+Presence payloads now include a minimal authentication summary (subject and scopes) so you can
+confirm which identity is online without exposing the full JWT contents.
+
+The Capacitor example app mirrors this setup automatically: when the **Auth token** field is filled
+in, it stores the value securely in local storage, injects it into `auth.token`, and adds a `token`
+query parameter for older client compatibility.
+
 > **Using the plugin directly:** Once the proxy is up, you can import the plugin in your own app and point `CapacitorSocketIO.connect({ url: process.env.VITE_SOCKET_PROXY_URL })` at the generated HTTPS endpoint. Remember to call `CapacitorSocketIO.on({ event })` before adding listeners for each event you care about.
 
 ## API surface
@@ -142,6 +202,7 @@ That’s it—you now have a native client talking to the Socket.IO test server 
 | `options.reconnectionDelayMax` | `number` | Maximum reconnection delay (ms). |
 | `options.path` | `string` | Override the Socket.IO namespace path (default `/socket.io`). |
 | `options.query` | `Record<string, string> \\| string` | Query string params for the handshake. |
+| `options.auth` | `Record<string, string \| number \| boolean \| null>` | Authentication payload forwarded via `handshake.auth` (stringified when bridged to native). |
 | `options.transports` | `string[]` | Transport whitelist (e.g. `['websocket']`). |
 | `options.allowSelfSigned` | `boolean` | Android/iOS only. Trust-all certificates for development builds. **Rejected at runtime** for production/distribution builds. |
 
@@ -227,7 +288,7 @@ See [`docs/testing-with-proxy.md`](./docs/testing-with-proxy.md) for a walkthrou
 
 | Platform | Package | Version | Notes |
 | --- | --- | --- | --- |
-| Android | `io.socket:socket.io-client` | `2.1.1` | Compatible with Socket.IO server 4.x. Excludes bundled `org.json` to avoid conflicts. |
+| Android | `io.socket:socket.io-client` | `2.1.2` | Compatible with Socket.IO server 4.x. Excludes bundled `org.json` to avoid conflicts. |
 | iOS | `Socket.IO-Client-Swift` | `16.1.1` | Aligned with Socket.IO server 4.x. Distributed via SwiftPM and CocoaPods. |
 | Web | `socket.io-client` | `^4.x` | Pulled indirectly through bundlers when using web fallback. |
 
@@ -255,6 +316,22 @@ if you are managing entries yourself.
 The stack exposes HTTPS on the port you choose (defaults to 443) and self-hosts the upstream
 Socket.IO test server. Shut it down with `npm run proxy:down` and watch logs with
 `npm run proxy:logs`.
+
+## Generate an AI-ready repository snapshot
+
+Want to reason about the whole codebase with an LLM? We ship a pre-tuned [Repomix](https://repomix.com/) setup so you can bundle the interesting bits without dragging binaries and build artefacts along for the ride.
+
+```bash
+npx repomix@latest
+```
+
+The command reads `repomix.config.json` plus `.repomixignore` and emits `repomix-output.xml` in the repository root. The configuration keeps:
+
+- the Capacitor plugin source under `src/`, `android/`, and `ios/`
+- the example app (`example-app/`) and Docker proxy (`docker/`)
+- docs, scripts, and CI workflows for extra context
+
+while skipping generated build directories, compiled assets, TLS certificates, and other sensitive material. The default run also scans for secrets before writing the bundle. Share the XML with your AI assistant of choice to give it full project awareness.
 
 ## Updating the generated docs
 

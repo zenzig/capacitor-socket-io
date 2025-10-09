@@ -132,6 +132,7 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
         let reconnectionDelayMax = extractDouble(options["reconnectionDelayMax"])
         let path = options["path"] as? String
         let query = parseQuery(options["query"])
+        let authPayload = parseAuthPayload(options["auth"])
         let transports = (options["transports"] as? [Any])?.compactMap { $0 as? String }
         let allowSelfSigned = options["allowSelfSigned"] as? Bool ?? false
 
@@ -145,6 +146,7 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
             reconnectionDelayMax: reconnectionDelayMax,
             path: path,
             query: query,
+            authPayload: authPayload,
             transports: transports,
             allowSelfSigned: allowSelfSigned
         )
@@ -209,6 +211,32 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
                 params[decodedKey] = decodedValue
             }
             return params
+        }
+
+        return nil
+    }
+
+    private func parseAuthPayload(_ value: Any?) -> [String: Any]? {
+        if let dictionary = value as? [String: Any], !dictionary.isEmpty {
+            return dictionary
+        }
+
+        if let dictionary = value as? NSDictionary, dictionary.count > 0 {
+            var converted: [String: Any] = [:]
+            for (key, rawValue) in dictionary {
+                guard let keyString = key as? String else { continue }
+                converted[keyString] = rawValue
+            }
+            return converted.isEmpty ? nil : converted
+        }
+
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : ["token": trimmed]
+        }
+
+        if let number = value as? NSNumber {
+            return ["token": number]
         }
 
         return nil
