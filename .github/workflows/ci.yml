@@ -137,8 +137,46 @@ jobs:
           api-level: 35
           build-tools: '35.0.0'
 
+      - name: Generate short-lived TLS certificates
+        run: |
+          mkdir -p docker/certs
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout docker/certs/socket-proxy-key.pem \
+            -out docker/certs/socket-proxy.pem \
+            -subj "/CN=${SOCKET_PROXY_HOST}"
+
+      - name: Start proxy stack
+        run: npm run proxy:up:ci
+
+      - name: Wait for proxy health
+        run: |
+          for attempt in {1..10}; do
+            if curl -sk https://${SOCKET_PROXY_HOST}/ | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Proxy did not become ready" >&2
+          exit 1
+
+      - name: Collect proxy diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Run Android unit tests
         run: npm run verify:android:raw
+
+      - name: Collect proxy diagnostics after tests
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
+      - name: Shutdown proxy stack
+        if: always()
+        run: npm run proxy:down:ci
 
   ios:
     runs-on: macos-latest
@@ -196,6 +234,12 @@ jobs:
 
       - name: Build iOS target
         run: npm run verify:ios:raw
+
+      - name: Collect proxy diagnostics after tests
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
 
       - name: Shutdown proxy stack
         if: always()
