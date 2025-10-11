@@ -88,6 +88,12 @@ jobs:
           echo "Proxy did not become ready" >&2
           exit 1
 
+      - name: Collect proxy diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Run Socket.IO smoke test
         run: node scripts/test-socket.mjs
 
@@ -181,6 +187,12 @@ jobs:
           done
           echo "Proxy did not become ready" >&2
           exit 1
+
+      - name: Collect proxy diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
 
       - name: Build iOS target
         run: npm run verify:ios:raw
