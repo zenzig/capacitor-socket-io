@@ -35,6 +35,10 @@ scripts/git-history-helper.mjs
 # Local TLS certificates
 docker/certs/*.pem
 
+# Playwright artifacts
+playwright-report/
+test-results/
+
 
 # Repomix bundles
 repomix-output.*

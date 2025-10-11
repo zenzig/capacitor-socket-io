@@ -16,7 +16,7 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
     private let socketManager = CapacitorSocketIO()
     private let workerQueue = DispatchQueue(label: "com.zenzig.plugins.socketio.worker", qos: .userInitiated)
 
-    public override func load() {
+    override public func load() {
         super.load()
 
         socketManager.setEventListener { [weak self] event, args, socketId in

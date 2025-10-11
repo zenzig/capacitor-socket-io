@@ -25,10 +25,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Run ESLint
         run: npm run eslint
@@ -55,10 +55,16 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
+
+      - name: Install example app dependencies
+        run: npm run example:install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
 
       - name: Generate short-lived TLS certificates
         run: |
@@ -85,6 +91,11 @@ jobs:
       - name: Run Socket.IO smoke test
         run: node scripts/test-socket.mjs
 
+      - name: Run web end-to-end tests
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm run test:e2e:web
+
       - name: Shutdown proxy stack
         if: always()
         run: npm run proxy:down:ci
@@ -102,10 +113,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Node dependencies (for shared tooling)
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -138,10 +149,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Install SwiftLint
         run: brew install swiftlint

@@ -32,6 +32,14 @@ let proxyHost;
 let proxyLanIp;
 let rl;
 
+const REQUIRED_ANDROID_SDK = Number.parseInt(process.env.ANDROID_WRITABLE_MIN_SDK ?? '36', 10);
+const REQUIRED_ANDROID_BUILD_TYPE = process.env.ANDROID_WRITABLE_BUILD_TYPE ?? 'userdebug';
+const REQUIRED_ANDROID_FLAVOR_FRAGMENTS = (process.env.ANDROID_WRITABLE_FLAVOR ?? 'sdk_gphone,google_apis')
+  .split(/[,|]/)
+  .map((fragment) => fragment.trim())
+  .filter(Boolean);
+const RECOMMENDED_ANDROID_AVD = process.env.ANDROID_WRITABLE_RECOMMENDED_AVD ?? 'Medium Phone (3)';
+
 async function main() {
   ({ proxyHost, proxyLanIp } = resolveProxyConfig());
 
@@ -123,10 +131,9 @@ async function launchAvdAndRun(avdName, existingIds) {
   emulatorProc.unref();
 
   const targetId = await waitForAndroidDevice(existingIds);
-  console.log(`Detected emulator ${targetId}. Configuring proxy mapping…`);
-  await configureAndroidHosts(targetId);
-  console.log('Installing app…\n');
-  await runCapacitor(['cap', 'run', 'android', '--target', targetId]);
+  const deviceInfo = ensureAndroidDeviceWritableSupport(targetId);
+  console.log(`Detected emulator ${deviceInfo.summary}. Configuring proxy mapping…`);
+  await configureAndRunAndroid(targetId, deviceInfo);
 }
 
 async function waitForAndroidDevice(existingIds) {
@@ -144,6 +151,85 @@ async function waitForAndroidDevice(existingIds) {
   }
 
   throw new Error('Timed out waiting for the Android emulator to boot.');
+}
+
+async function configureAndRunAndroid(targetId, preflightInfo) {
+  const info = preflightInfo ?? ensureAndroidDeviceWritableSupport(targetId);
+  console.log(`Using ${info.summary} for the proxy test…`);
+  await configureAndroidHosts(targetId);
+  console.log('Installing app…\n');
+  await runCapacitor(['cap', 'run', 'android', '--target', targetId]);
+}
+
+function ensureAndroidDeviceWritableSupport(targetId) {
+  const props = readAndroidDeviceProperties(targetId);
+  const sdkValue = props.get('ro.build.version.sdk');
+  const sdk = Number.parseInt(sdkValue ?? '', 10);
+  const release = props.get('ro.build.version.release_or_codename') ?? 'unknown';
+  const buildType = props.get('ro.build.type') ?? 'unknown';
+  const flavorCandidates = [props.get('ro.build.flavor'), props.get('ro.product.name'), props.get('ro.system.build.fingerprint')];
+  const avdName = props.get('ro.boot.qemu.avd_name') ?? props.get('ro.boot.avd_name') ?? props.get('ro.product.device') ?? 'unknown';
+  const issues = [];
+
+  if (!Number.isFinite(sdk)) {
+    issues.push('unable to determine API level');
+  } else if (sdk < REQUIRED_ANDROID_SDK) {
+    issues.push(`API level ${sdk} is below required ${REQUIRED_ANDROID_SDK}`);
+  }
+
+  if (REQUIRED_ANDROID_BUILD_TYPE && buildType !== REQUIRED_ANDROID_BUILD_TYPE) {
+    issues.push(`build type ${buildType} does not match required ${REQUIRED_ANDROID_BUILD_TYPE}`);
+  }
+
+  if (REQUIRED_ANDROID_FLAVOR_FRAGMENTS.length > 0) {
+    const hasFlavorMatch = flavorCandidates.some((value) =>
+      value ? REQUIRED_ANDROID_FLAVOR_FRAGMENTS.some((fragment) => value.includes(fragment)) : false,
+    );
+    if (!hasFlavorMatch) {
+      const fragmentSummary = REQUIRED_ANDROID_FLAVOR_FRAGMENTS.join(', ');
+      issues.push(
+        `system image does not include any of [${fragmentSummary}] in its flavor (${flavorCandidates.filter(Boolean).join(', ') || 'unknown'})`,
+      );
+    }
+  }
+
+  if (issues.length > 0) {
+    const readableSdk = Number.isFinite(sdk) ? sdk : 'unknown';
+    const fragmentSummary = REQUIRED_ANDROID_FLAVOR_FRAGMENTS.join(', ');
+    throw new Error(
+      `Device ${targetId ?? '<default>'} (${avdName}, API ${readableSdk} ${release}, build ${buildType}) is incompatible: ${issues.join(
+        '; ',
+      )}. Use the ${RECOMMENDED_ANDROID_AVD} emulator (API ${REQUIRED_ANDROID_SDK} ${REQUIRED_ANDROID_BUILD_TYPE}${
+        fragmentSummary ? `, flavor containing one of ${fragmentSummary}` : ''
+      }) or override the requirements via ANDROID_WRITABLE_* environment variables.`,
+    );
+  }
+
+  const flavor = flavorCandidates.find(Boolean) ?? 'unknown';
+  const summary = `${avdName} (API ${sdk} ${release}, build ${buildType}${flavor && flavor !== 'unknown' ? `, ${flavor}` : ''})`;
+  console.log(`  ✔ ${summary} supports /system remounts`);
+  return { targetId, sdk, release, buildType, flavor, avdName, summary };
+}
+
+function readAndroidDeviceProperties(targetId) {
+  const args = targetId ? ['-s', targetId, 'shell', 'getprop'] : ['shell', 'getprop'];
+  const result = spawnSync('adb', args, { encoding: 'utf8' });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    throw new Error(`adb ${args.join(' ')} failed${stderr ? `: ${stderr}` : ''}`);
+  }
+
+  const props = new Map();
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const match = line.match(/^\[(.+?)\]: \[(.*)\]$/);
+    if (match) {
+      props.set(match[1], match[2]);
+    }
+  }
+  return props;
 }
 
 async function runIOS() {

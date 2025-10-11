@@ -23,10 +23,10 @@ Substitute your organisation’s internal CA or another PKI solution if preferre
 Prefer a ready-made environment? This repository ships a Docker stack that launches an upstream
 Socket.IO server and an HTTPS reverse proxy. Run `npm run proxy:setup` from the repo root to
 generate certificates with mkcert, normalise `.env`, and bring the stack up automatically (ensure
-Docker is running first). Append `--host dev.example.com` to use a different hostname, `--port 4443`
-if 443 is already taken locally, or `--no-start` if you only want the certificates and `.env`
-updates without launching Docker. The script inspects active listeners and prints whichever process
-currently owns a conflicting port so you can resolve the clash quickly. Under the hood the script
+Docker is running first). Append `--host dev.example.com` to use a different hostname, or `--no-start`
+if you only want the certificates and `.env` updates without launching Docker. The script inspects
+active listeners and prints whichever process currently owns port 443 so you can resolve the clash
+quickly. Under the hood the script
 performs the following steps (you can run them manually if you prefer):
 
 1. Generate certificates for `socket-proxy.local` (steps below) and drop them into
@@ -49,6 +49,28 @@ performs the following steps (you can run them manually if you prefer):
   ```
 
 5. When finished, stop it with `npm run proxy:down`. Use `npm run proxy:logs` to tail Nginx output.
+
+## Automated end-to-end coverage
+
+Once the proxy is running you can drive the entire connect → ping → pong loop from every platform in one shot. The suite shares the same environment variables as the rest of the tooling, so no additional configuration is required beyond `.env`. When your proxy binds to a LAN IP that emulators must reach directly, set `E2E_LAN_HOST` (or reuse `ANDROID_PROXY_LAN_IP`) so the Playwright server stage listens on that interface instead of `127.0.0.1`.
+
+1. Install the example app dependencies (once per clone):
+
+  ```bash
+  npm run example:install
+  ```
+
+2. With the proxy stack still running, execute the multi-platform suite:
+
+  ```bash
+  npm run test:e2e
+  ```
+
+  This command runs the Android JVM Socket.IO test, the iOS Swift package test (it auto-selects an available simulator using `xcrun simctl`; set `E2E_IOS_DESTINATION` if you prefer a specific device), and finally the Playwright browser journey. Playwright starts the Vite dev server in development mode, ignores the self-signed proxy certificate, connects through the browser flow, emits a ping, and waits for the pong response. Artifacts (traces, screenshots, and a HTML report) land under `playwright-report/`. The browser checks the same host/port that you configure via `E2E_DEV_SERVER_HOST` / `E2E_DEV_SERVER_PORT`, so binding the dev server to a LAN IP is now supported out of the box.
+
+  Need the browser flow only? Run `npm run test:e2e:web` instead.
+
+3. CI uses the same command inside the `tls-integration` job after spinning up short-lived certificates, so failures locally will mirror the pipeline.
 
 ### Add token authentication (optional)
 
@@ -233,9 +255,11 @@ Set the proxy URL in each place you integrate with the plugin:
   ```
 - **Helper scripts:** populate `SOCKET_IO_PROXY_URL` in `.env` for `scripts/test-socket.js` /
   `test-socket.mjs`.
+- **Helper scripts:** populate `SOCKET_IO_PROXY_URL` in `.env` for `scripts/test-socket.js` /
+  `test-socket.mjs`.
 
-If you pick a non-default port, append it to the URLs above—for example
-`VITE_SOCKET_PROXY_URL=https://socket-proxy.local:4443`.
+Keep the proxy on port 443 so every launcher, test suite, and Docker configuration resolves the
+same endpoint. Free the port if another process occupies it before restarting the stack.
 
 Per-platform overrides were previously required for emulators; the launcher script now handles host
 mapping automatically when `ANDROID_PROXY_LAN_IP` is present.

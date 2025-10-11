@@ -38,8 +38,7 @@ across all three clients.
 > equivalent) in the root `.env` file. Running `npm run proxy:setup` **from the repository root**
 > will generate mkcert certificates, normalise `.env`, and start the bundled Docker proxy
 > automatically (requires Docker to be running). Use `--host dev.example.com` to target a different
-> hostname, `--port 4443` if port 443 is already in use locally, or `--no-start` to skip launching
-> containers. If you are already inside `example-app/`, run `npm run proxy:setup -- --no-start`
+> hostname, or `--no-start` to skip launching containers. If you are already inside `example-app/`, run `npm run proxy:setup -- --no-start`
 > from the repository root in another terminal, or use `npm --prefix .. run proxy:setup -- --no-start`
 > to invoke the script without leaving this
 > directory. If the
@@ -53,8 +52,9 @@ across all three clients.
 > ANDROID_PROXY_LAN_IP=192.168.0.28
 > ```
 >
-> When using a non-default port, append it to the URLs—for example
-> `VITE_SOCKET_PROXY_URL=https://socket-proxy.local:4443`.
+> Keep the proxy on port 443—the launchers, Playwright suite, and example configuration all assume
+> the default HTTPS port. If something else is listening on 443, stop it before rerunning
+> `npm run proxy:setup`.
 >
 > Self-signed certificates are only trusted in development builds; production builds must present a
 > CA-issued or pinned certificate.
@@ -97,6 +97,12 @@ npm run test:android
 > SDK allows `/system/etc/hosts` to be remounted read/write. The launcher starts emulators with
 > `-writable-system` automatically; if you bring your own running emulator, reboot it with
 > `emulator -avd <name> -writable-system` before running the script.
+>
+> The launcher now inspects the connected device with `adb getprop` and refuses to continue unless
+> the image matches the expected API/userdebug profile (by default API 36 with a flavor containing
+> `sdk_gphone` or `google_apis`). If you see
+> an error, rerun the script with the **Medium Phone (3)** emulator highlighted above or adjust the
+> `ANDROID_WRITABLE_*` overrides in `.env` to match your custom image.
 
 During development you can keep the Vite dev server running for quick web refreshes:
 

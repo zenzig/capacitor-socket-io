@@ -6,7 +6,12 @@ import SocketIO
 public final class CapacitorSocketIO {
 
     public static let defaultURLString = "https://socket-proxy.local/"
-    public static let defaultURL = URL(string: CapacitorSocketIO.defaultURLString)!
+    public static let defaultURL: URL = {
+        guard let url = URL(string: CapacitorSocketIO.defaultURLString) else {
+            preconditionFailure("Invalid default Socket.IO URL: \(CapacitorSocketIO.defaultURLString)")
+        }
+        return url
+    }()
 
     public struct ConnectConfiguration {
         public let url: URL
@@ -478,7 +483,6 @@ public final class CapacitorSocketIO {
         }
     }
 }
-
 private final class TrustingURLSessionDelegate: NSObject, URLSessionDelegate {
     func urlSession(
         _ session: URLSession,
@@ -492,4 +496,3 @@ private final class TrustingURLSessionDelegate: NSObject, URLSessionDelegate {
         }
     }
 }
-
