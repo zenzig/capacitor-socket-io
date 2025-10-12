@@ -492,6 +492,7 @@ function main() {
 
   const existingLanIp = process.env.ANDROID_PROXY_LAN_IP?.trim();
   const detectedLanIp = !isIpAddress(host) ? detectLanIp() : undefined;
+  let lanIpForClients = existingLanIp;
 
   if (detectedLanIp) {
     if (existingLanIp !== detectedLanIp) {
@@ -499,8 +500,27 @@ function main() {
       console.log(`Detected LAN IP ${detectedLanIp} and recorded it in .env (ANDROID_PROXY_LAN_IP).`);
     }
     process.env.ANDROID_PROXY_LAN_IP = detectedLanIp;
+    lanIpForClients = detectedLanIp;
   } else if (!existingLanIp && !isIpAddress(host)) {
     console.warn('Unable to detect a LAN IP automatically. Set ANDROID_PROXY_LAN_IP in .env if your emulator needs a host mapping.');
+  }
+
+  const preferredDevServerHost = (() => {
+    if (lanIpForClients && lanIpForClients.length > 0) {
+      return lanIpForClients;
+    }
+    if (isIpAddress(host)) {
+      return host;
+    }
+    return '127.0.0.1';
+  })();
+
+  upsertEnvValue('E2E_DEV_SERVER_HOST', preferredDevServerHost);
+  process.env.E2E_DEV_SERVER_HOST = preferredDevServerHost;
+  if (preferredDevServerHost === '127.0.0.1') {
+    console.log('No LAN IP detected; defaulting E2E_DEV_SERVER_HOST to 127.0.0.1.');
+  } else {
+    console.log(`Updated E2E_DEV_SERVER_HOST to ${preferredDevServerHost}.`);
   }
 
   ensureMkcert();
