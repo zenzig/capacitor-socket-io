@@ -43,7 +43,7 @@
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- lint --config .swiftlint.yml --fix --format",
     "eslint": "eslint . --ext ts",
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
-    "swiftlint": "node-swiftlint",
+  "swiftlint": "node-swiftlint --config .swiftlint.yml",
     "docgen": "docgen --api CapacitorSocketIOPlugin --output-readme README.md --output-json dist/docs.json",
   "build": "npm run docgen && npm run build:dist",
   "build:dist": "node ./scripts/build-dist.mjs",
