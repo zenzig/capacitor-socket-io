@@ -74,7 +74,7 @@
     "@playwright/test": "^1.49.0",
     "@types/node": "^20.14.11",
     "dotenv": "^16.4.5",
-    "dotenv-cli": "^7.4.2",
+    "dotenv-cli": "^10.0.0",
     "eslint": "^8.57.0",
     "prettier": "^3.4.2",
     "prettier-plugin-java": "^2.6.6",
