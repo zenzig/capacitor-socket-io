@@ -75,6 +75,12 @@ jobs:
             -out docker/certs/socket-proxy.pem \
             -subj "/CN=${SOCKET_PROXY_HOST}"
 
+      - name: Ensure proxy hostname resolves
+        if: runner.os == 'Linux'
+        run: |
+          sudo sed -i '/\s${SOCKET_PROXY_HOST}$/d' /etc/hosts
+          echo "127.0.0.1 ${SOCKET_PROXY_HOST}" | sudo tee -a /etc/hosts
+
       - name: Start proxy stack
         if: runner.os == 'Linux'
         run: npm run proxy:up:ci
@@ -147,6 +153,11 @@ jobs:
             -keyout docker/certs/socket-proxy-key.pem \
             -out docker/certs/socket-proxy.pem \
             -subj "/CN=${SOCKET_PROXY_HOST}"
+
+      - name: Ensure proxy hostname resolves
+        run: |
+          sudo sed -i '/\s${SOCKET_PROXY_HOST}$/d' /etc/hosts
+          echo "127.0.0.1 ${SOCKET_PROXY_HOST}" | sudo tee -a /etc/hosts
 
       - name: Start proxy stack
         run: npm run proxy:up:ci
