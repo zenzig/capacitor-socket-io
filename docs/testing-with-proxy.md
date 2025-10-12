@@ -26,7 +26,8 @@ generate certificates with mkcert, normalise `.env`, and bring the stack up auto
 Docker is running first). Append `--host dev.example.com` to use a different hostname, or `--no-start`
 if you only want the certificates and `.env` updates without launching Docker. The script inspects
 active listeners and prints whichever process currently owns port 443 so you can resolve the clash
-quickly. Under the hood the script
+quickly. It also keeps `E2E_DEV_SERVER_HOST` in sync with the detected proxy host so browser tests
+bind to the correct interface. Under the hood the script
 performs the following steps (you can run them manually if you prefer):
 
 1. Generate certificates for `socket-proxy.local` (steps below) and drop them into
@@ -49,6 +50,7 @@ performs the following steps (you can run them manually if you prefer):
   ```
 
 5. When finished, stop it with `npm run proxy:down`. Use `npm run proxy:logs` to tail Nginx output.
+  Check readiness at any time with `curl -sk https://socket-proxy.local/healthz`.
 
 ## Automated end-to-end coverage
 

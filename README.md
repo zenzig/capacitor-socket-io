@@ -81,10 +81,12 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 	This command:
 
 	- generates/refreshes mkcert certificates under `docker/certs/`
-	- updates `.env` with `SOCKET_PROXY_HOST`, `SOCKET_IO_PROXY_URL`, `VITE_SOCKET_PROXY_URL`, and a detected `ANDROID_PROXY_LAN_IP`
+	- updates `.env` with `SOCKET_PROXY_HOST`, `SOCKET_IO_PROXY_URL`, `VITE_SOCKET_PROXY_URL`, a detected `ANDROID_PROXY_LAN_IP`, and the matching `E2E_DEV_SERVER_HOST` so browser E2E tests bind to the same interface
 	- rewrites `/etc/hosts` (on macOS/Linux) so only one entry for `socket-proxy.local` remains, then starts the Docker proxy stack detached
 
 	Add `--no-start` if you only want to refresh certificates and `.env`, or `--host dev.example.com` to customise the endpoint. The proxy always binds to port 443 so automated tests have a consistent target—free that port first if another service is listening on it.
+
+	Once the stack is up, confirm it is healthy with `curl -sk https://socket-proxy.local/healthz`.
 
 		With the stack running, open [https://socket-proxy.local/](https://socket-proxy.local/) in your browser to access the
 		web console. It mirrors the native playground UI so you can watch iOS, Android, and web clients interact in real time.

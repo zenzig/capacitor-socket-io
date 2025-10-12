@@ -12,7 +12,8 @@ This folder contains a two-container stack that mirrors a production deployment:
 > the stack detached (Docker must be running). Need a different hostname? Pass
 > `--host dev.example.com`. Want to skip launching containers on this machine? Append `--no-start`.
 > The proxy binds to port 443; if the script reports that the port is busy, stop the conflicting
-> service before restarting setup.
+> service before restarting setup. The script also rewrites `E2E_DEV_SERVER_HOST` in `.env` so
+> Playwright-based flows bind to the same interface.
 > Manual instructions remain available for fine-grained control.
 
 1. Generate a trusted certificate for `socket-proxy.local` (see `docs/testing-with-proxy.md`).
@@ -40,7 +41,8 @@ This folder contains a two-container stack that mirrors a production deployment:
    npm run proxy:down
    ```
 
-Use `npm run proxy:logs` to follow Nginx output while debugging.
+Use `npm run proxy:logs` to follow Nginx output while debugging, or verify the stack is healthy with
+`curl -sk https://socket-proxy.local/healthz`.
 
 ## Enforcing JWT authentication
 
