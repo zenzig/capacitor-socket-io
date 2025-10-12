@@ -1,11 +1,14 @@
 package com.zenzig.plugins.socketio;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -45,12 +48,31 @@ public class CapacitorSocketIOTest {
 
         CountDownLatch connectLatch = new CountDownLatch(1);
         CountDownLatch errorLatch = new CountDownLatch(1);
+        CountDownLatch pongLatch = new CountDownLatch(1);
         AtomicReference<String> errorMessage = new AtomicReference<>("<no error>");
+        AtomicReference<JSONObject> pongPayload = new AtomicReference<>();
 
         manager.setEventListener((eventName, args) -> {
             System.out.println("[SocketIOTest] Event: " + eventName + " -> " + Arrays.toString(args));
             if (Socket.EVENT_CONNECT.equals(eventName)) {
                 connectLatch.countDown();
+            }
+
+            if ("pong".equals(eventName)) {
+                if (args != null && args.length > 0) {
+                    Object firstArg = args[0];
+                    if (firstArg instanceof JSONObject) {
+                        pongPayload.set((JSONObject) firstArg);
+                    } else if (firstArg != null) {
+                        try {
+                            pongPayload.set(new JSONObject(firstArg.toString()));
+                        } catch (Exception parseError) {
+                            errorMessage.set("pong payload parse error -> " + parseError.getMessage());
+                            errorLatch.countDown();
+                        }
+                    }
+                }
+                pongLatch.countDown();
             }
 
             if ("connect_error".equals(eventName) || "error".equals(eventName)) {
@@ -86,15 +108,37 @@ public class CapacitorSocketIOTest {
             }
         }
 
+        final String pingMessage = "Hello from Capacitor Android test";
+        final int sequence = 1;
+
         JSONObject payload = new JSONObject();
-        payload.put("msg", "Hello from Capacitor Android test");
+        payload.put("deviceId", "android-unit-test");
+        payload.put("alias", "Android JVM Test");
+        payload.put("origin", "android-jvm");
+        payload.put("message", pingMessage);
+        payload.put("sequence", sequence);
+        payload.put("sentAt", Instant.now().toString());
 
         manager.emit("ping", payload);
-        // Give the remote server a small window to respond to the emitted event.
-        TimeUnit.SECONDS.sleep(5);
 
-        // No additional assertion here as the remote service may respond with different events. The absence
-        // of an error and a successful emit indicates a healthy round-trip connection.
+        boolean pongReceived = pongLatch.await(20, TimeUnit.SECONDS);
+        if (!pongReceived) {
+            if (errorLatch.getCount() == 0) {
+                fail("Socket emitted error before pong: " + errorMessage.get());
+            } else {
+                fail("Timed out waiting for pong event");
+            }
+        }
+
+        JSONObject pong = pongPayload.get();
+        assertNotNull("Expected pong payload to be captured", pong);
+        assertTrue("Pong payload should include original message", pingMessage.equals(pong.optString("message")));
+        assertTrue("Pong payload should include matching sequence", pong.optInt("sequence", -1) == sequence);
+        assertTrue(
+            "Pong payload must include respondedAt timestamp",
+            pong.has("respondedAt") && pong.optString("respondedAt").length() > 0
+        );
+        assertTrue("Pong payload must include non-negative latency", pong.has("latencyMs") && pong.optLong("latencyMs", -1) >= 0);
     }
 
     private OkHttpClient buildTrustAllClient() throws Exception {

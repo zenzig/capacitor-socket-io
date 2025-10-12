@@ -14,33 +14,8 @@ servers from Android and iOS with a shared JavaScript API.
 ## Gallery
 
 <figure>
-	<img src="./docs/gallery/1.png" alt="iOS simulator timeline showing ping and pong events with latency metadata" width="960" />
-	<figcaption><strong>Native iOS timeline.</strong> The simulator surfaces ping/pong payloads from the proxy, including device identity, origin, and measured latency.</figcaption>
-</figure>
-
-<figure>
-	<img src="./docs/gallery/2.png" alt="Android emulator displaying broadcast feed, presence list, and event timeline" width="960" />
-	<figcaption><strong>Android broadcast and presence.</strong> The Material-styled view renders the same feed, presence roster, and timeline shared across platforms.</figcaption>
-</figure>
-
-<figure>
-	<img src="./docs/gallery/3.png" alt="Web proxy console mirroring native activity with raw Socket.IO events" width="960" />
-	<figcaption><strong>Proxy console.</strong> The HTTPS dashboard mirrors every Socket.IO event so you can inspect raw payloads alongside the native apps.</figcaption>
-</figure>
-
-<figure>
-	<img src="./docs/gallery/4.png" alt="Side-by-side montage of iOS, Android, and web clients connected simultaneously" width="960" />
-	<figcaption><strong>Three-way sync.</strong> iOS, Android, and the proxy UI stay in lockstep while broadcasting messages and presence updates.</figcaption>
-</figure>
-
-<figure>
-	<img src="./docs/gallery/6.png" alt="Broadcast composer form with alias controls and connection status" width="960" />
-	<figcaption><strong>Broadcast composer.</strong> Alias editing, ping composer, and connection status indicators make it easy to test flows end-to-end.</figcaption>
-</figure>
-
-<figure>
-	<img src="./docs/gallery/7.png" alt="Certificate trust toggle and proxy configuration inputs in the example app" width="960" />
-	<figcaption><strong>Proxy configuration.</strong> Toggle self-signed certificates, point at alternative hosts, and reconnect without leaving the playground.</figcaption>
+	<img src="./docs/gallery/overview.gif" alt="Animated rotation of iOS, Android, web console, and proxy configuration screens" width="960" />
+	<figcaption><strong>Cross-platform overview.</strong> The animation cycles through the native timelines, proxy console, and configuration views.</figcaption>
 </figure>
 
 ## Installation
@@ -81,10 +56,12 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 	This command:
 
 	- generates/refreshes mkcert certificates under `docker/certs/`
-	- updates `.env` with `SOCKET_PROXY_HOST`, `SOCKET_IO_PROXY_URL`, `VITE_SOCKET_PROXY_URL`, and a detected `ANDROID_PROXY_LAN_IP`
+	- updates `.env` with `SOCKET_PROXY_HOST`, `SOCKET_IO_PROXY_URL`, `VITE_SOCKET_PROXY_URL`, a detected `ANDROID_PROXY_LAN_IP`, and the matching `E2E_DEV_SERVER_HOST` so browser E2E tests bind to the same interface
 	- rewrites `/etc/hosts` (on macOS/Linux) so only one entry for `socket-proxy.local` remains, then starts the Docker proxy stack detached
 
-	Add `--no-start` if you only want to refresh certificates and `.env`, or `--port 4443` / `--host dev.example.com` to customise the endpoint.
+	Add `--no-start` if you only want to refresh certificates and `.env`, or `--host dev.example.com` to customise the endpoint. The proxy always binds to port 443 so automated tests have a consistent target—free that port first if another service is listening on it.
+
+	Once the stack is up, confirm it is healthy with `curl -sk https://socket-proxy.local/healthz`.
 
 		With the stack running, open [https://socket-proxy.local/](https://socket-proxy.local/) in your browser to access the
 		web console. It mirrors the native playground UI so you can watch iOS, Android, and web clients interact in real time.
@@ -92,10 +69,8 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 3. **Build and sync the example app:**
 
 	```bash
-	cd example-app
-	npm install
-	npm run build
-	npx cap sync android ios
+	npm run example:install
+	(cd example-app && npm run build && npx cap sync android ios)
 	```
 
 4. **Run the Android demo (auto host-mapping included):**
@@ -114,7 +89,44 @@ Follow these steps to exercise the plugin using the bundled Docker proxy and the
 
 That’s it—you now have a native client talking to the Socket.IO test server exposed by Docker. Keep the proxy running while iterating; when you’re done, stop it with `npm run proxy:down`.
 
+6. **Optional – run the web end-to-end suite:**
+
+	```bash
+	npm run test:e2e
+	```
+
+The Playwright runner bootstraps the Vite dev server, connects the browser experience to the proxy, exercises the connect/ping workflow, and captures traces for debugging.
+
 > Paste any issued JWT into the **Auth token** field on the example app’s proxy card before tapping **Connect**. The playground persists the token locally, forwards it via both `handshake.auth.token` and a `token` query parameter, and notes in the event timeline whether authentication was supplied.
+
+## Testing
+
+Automated checks assume the HTTPS proxy is available at `https://socket-proxy.local:443`. Start it with `npm run proxy:setup -- --write-hosts` (or reuse an existing run) before executing any test suites. Stop it afterwards with `npm run proxy:down`.
+
+### Cross-platform end-to-end coverage
+
+- `npm run test:e2e` – runs the Android JVM socket test, the iOS Swift package test, and the Playwright browser suite sequentially so every platform proves it can connect, identify, and exchange pings with the proxy. The script auto-selects an available iOS simulator via `xcrun simctl`; set `E2E_IOS_DESTINATION` (for example `platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5` or simply `platform=iOS Simulator,id=<UDID>`) if you want to override the pick. If emulators must reach the dev machine over the LAN, export `E2E_LAN_HOST` (or reuse `ANDROID_PROXY_LAN_IP`) so the Playwright dev server binds to that interface instead of loopback.
+- `npm run test:e2e:web` – executes only the Playwright flow if you want to focus on the web harness.
+
+### Fast feedbackn
+
+- `npm run lint` – runs ESLint, Prettier (check mode), and SwiftLint so TypeScript, Java, and Swift changes stay formatted and warning-free.
+- `npm run test` – executes the Vitest unit suite (everything except the Playwright flow).
+- `npm run test:watch` – keeps Vitest running interactively while you iterate.
+- `npm run verify:web` – builds the plugin bundle to confirm the TypeScript output still ships.
+
+### Native build verification
+
+- `npm run verify:android` – invokes the Gradle unit tests and assembly tasks (requires the Android SDK/NDK configured on your PATH).
+- `npm run verify:ios` – builds the Swift Package via `xcodebuild` to catch compile-time issues.
+- `npm run verify` – runs the Android, iOS, and web verify targets sequentially.
+
+### Native playground launchers
+
+- `npm run test:android` – rebuilds the plugin, deploys the example app to a device/emulator, rewrites `/system/etc/hosts` with `socket-proxy.local`, and exercises the ping workflow. Provide `ANDROID_PROXY_LAN_IP` in `.env` when the proxy listens on a LAN address.
+- `npm run test:ios` – opens a picker for simulators, installs the example app, and connects to the proxy.
+
+Every command above reads `.env` automatically, so keep `SOCKET_IO_PROXY_URL` and `VITE_SOCKET_PROXY_URL` pointed at `https://socket-proxy.local`.
 
 ## Token-based authentication
 
@@ -243,12 +255,19 @@ adb shell "echo '192.168.0.28 socket-proxy.local' >> /system/etc/hosts"
 adb reboot
 ```
 
-> **Custom port:** If you run the proxy on a port other than 443, append it to `VITE_SOCKET_PROXY_URL`
-> (e.g. `https://socket-proxy.local:4443`) and restart the proxy plus the launcher.
+> **Port requirement:** Keep the proxy on port 443. The launchers, web E2E tests, and helper scripts
+> all assume `https://socket-proxy.local` without an explicit port. If something else is holding onto
+> 443, stop that service before running `npm run proxy:setup` again.
 
 > **Emulator images:** Pick a *Google APIs* system image (avoid Google Play Store images) so the
 > launcher can remount `/system` read/write. It boots new emulators with `-writable-system`, but
 > pre-existing emulators must be restarted with that flag for the automatic host mapping to succeed.
+>
+> The launcher verifies the connected device with `adb getprop` before proceeding. It currently
+> expects an API 36 userdebug image whose flavor string contains `sdk_gphone` (or `google_apis` as a
+> secondary match—the default allows either). If you prefer a different build, set
+> `ANDROID_WRITABLE_MIN_SDK`, `ANDROID_WRITABLE_BUILD_TYPE`, or `ANDROID_WRITABLE_FLAVOR` in `.env`
+> to relax the constraints.
 
 ### Testing with a TLS Socket.IO proxy
 
@@ -308,12 +327,11 @@ The setup script checks for mkcert, generates `docker/certs/socket-proxy.pem`, n
 rewrites `/etc/hosts` so only one entry for `socket-proxy.local` remains, and starts the containers
 detached. Ensure the Docker daemon is running beforehand. Prefer to run steps manually (or on a host
 without Docker)? Append `--no-start` to skip launching the containers, and start them later with
-`npm run proxy:up`. Need a different hostname? Add `--host dev.example.com`. Port 443 already taken
-locally? Use `--port 4443` (or another free port); the script updates `.env`, rewrites the proxy URL
-with the new port, and passes it to Docker Compose. Skip the hosts rewrite with `--no-write-hosts`
-if you are managing entries yourself.
+`npm run proxy:up`. Need a different hostname? Add `--host dev.example.com`. The proxy always binds
+to port 443; if that port is in use, stop the conflicting service before rerunning setup. Skip the
+hosts rewrite with `--no-write-hosts` if you are managing entries yourself.
 
-The stack exposes HTTPS on the port you choose (defaults to 443) and self-hosts the upstream
+The stack exposes HTTPS on port 443 and self-hosts the upstream
 Socket.IO test server. Shut it down with `npm run proxy:down` and watch logs with
 `npm run proxy:logs`.
 

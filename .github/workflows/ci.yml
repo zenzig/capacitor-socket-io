@@ -25,10 +25,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Run ESLint
         run: npm run eslint
@@ -55,12 +55,19 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
+
+      - name: Install example app dependencies
+        run: npm run example:install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
 
       - name: Generate short-lived TLS certificates
+        if: runner.os == 'Linux'
         run: |
           mkdir -p docker/certs
           openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
@@ -68,13 +75,21 @@ jobs:
             -out docker/certs/socket-proxy.pem \
             -subj "/CN=${SOCKET_PROXY_HOST}"
 
+      - name: Ensure proxy hostname resolves
+        if: runner.os == 'Linux'
+        run: |
+          sudo sed -i '/\s${SOCKET_PROXY_HOST}$/d' /etc/hosts
+          echo "127.0.0.1 ${SOCKET_PROXY_HOST}" | sudo tee -a /etc/hosts
+
       - name: Start proxy stack
+        if: runner.os == 'Linux'
         run: npm run proxy:up:ci
 
       - name: Wait for proxy health
+        if: runner.os == 'Linux'
         run: |
           for attempt in {1..10}; do
-            if curl -sk https://${SOCKET_PROXY_HOST}/ | grep -q '"status":"ok"'; then
+            if curl -sk https://${SOCKET_PROXY_HOST}/healthz | grep -q '"status":"ok"'; then
               exit 0
             fi
             sleep 3
@@ -82,8 +97,19 @@ jobs:
           echo "Proxy did not become ready" >&2
           exit 1
 
+      - name: Collect proxy diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Run Socket.IO smoke test
         run: node scripts/test-socket.mjs
+
+      - name: Run web end-to-end tests
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm run test:e2e:web
 
       - name: Shutdown proxy stack
         if: always()
@@ -102,10 +128,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Node dependencies (for shared tooling)
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -120,8 +146,51 @@ jobs:
           api-level: 35
           build-tools: '35.0.0'
 
+      - name: Generate short-lived TLS certificates
+        run: |
+          mkdir -p docker/certs
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout docker/certs/socket-proxy-key.pem \
+            -out docker/certs/socket-proxy.pem \
+            -subj "/CN=${SOCKET_PROXY_HOST}"
+
+      - name: Ensure proxy hostname resolves
+        run: |
+          sudo sed -i '/\s${SOCKET_PROXY_HOST}$/d' /etc/hosts
+          echo "127.0.0.1 ${SOCKET_PROXY_HOST}" | sudo tee -a /etc/hosts
+
+      - name: Start proxy stack
+        run: npm run proxy:up:ci
+
+      - name: Wait for proxy health
+        run: |
+          for attempt in {1..10}; do
+            if curl -sk https://${SOCKET_PROXY_HOST}/healthz | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Proxy did not become ready" >&2
+          exit 1
+
+      - name: Collect proxy diagnostics on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Run Android unit tests
         run: npm run verify:android:raw
+
+      - name: Collect proxy diagnostics after tests
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
+      - name: Shutdown proxy stack
+        if: always()
+        run: npm run proxy:down:ci
 
   ios:
     runs-on: macos-latest
@@ -138,10 +207,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-          run: npm ci
-          env:
-            ROLLUP_DISABLE_NATIVE: '1'
-            npm_config_rollup_disable_native: 'true'
+        run: npm ci
+        env:
+          ROLLUP_DISABLE_NATIVE: '1'
+          npm_config_rollup_disable_native: 'true'
 
       - name: Install SwiftLint
         run: brew install swiftlint
@@ -150,6 +219,7 @@ jobs:
         run: npm run swiftlint -- lint
 
       - name: Generate short-lived TLS certificates
+        if: runner.os == 'Linux'
         run: |
           mkdir -p docker/certs
           openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
@@ -158,12 +228,14 @@ jobs:
             -subj "/CN=${SOCKET_PROXY_HOST}"
 
       - name: Start proxy stack
+        if: runner.os == 'Linux'
         run: npm run proxy:up:ci
 
       - name: Wait for proxy health
+        if: runner.os == 'Linux'
         run: |
           for attempt in {1..10}; do
-            if curl -sk https://${SOCKET_PROXY_HOST}/ | grep -q '"status":"ok"'; then
+            if curl -sk https://${SOCKET_PROXY_HOST}/healthz | grep -q '"status":"ok"'; then
               exit 0
             fi
             sleep 3
@@ -171,9 +243,21 @@ jobs:
           echo "Proxy did not become ready" >&2
           exit 1
 
+      - name: Collect proxy diagnostics on failure
+        if: failure() && runner.os == 'Linux'
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Build iOS target
         run: npm run verify:ios:raw
 
+      - name: Collect proxy diagnostics after tests
+        if: failure() && runner.os == 'Linux'
+        run: |
+          docker compose -f docker/docker-compose.proxy.yml ps
+          docker compose -f docker/docker-compose.proxy.yml logs --no-color
+
       - name: Shutdown proxy stack
-        if: always()
+        if: always() && runner.os == 'Linux'
         run: npm run proxy:down:ci

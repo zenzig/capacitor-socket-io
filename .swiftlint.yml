@@ -1,0 +1,26 @@
+parent_config: node_modules/@ionic/swiftlint-config/.swiftlint.yml
+
+included:
+  - ios/Sources
+  - ios/Tests
+
+excluded:
+  - .build
+  - ios/Sources/CapacitorSocketIOPlugin/Generated
+
+type_body_length:
+  warning: 420
+  error: 520
+
+function_body_length:
+  warning: 80
+  error: 100
+
+file_length:
+  warning: 520
+  error: 620
+
+cyclomatic_complexity:
+  warning: 20
+  error: 30
+
