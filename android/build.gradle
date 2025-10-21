@@ -40,6 +40,14 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+    testOptions {
+        unitTests.all {
+            // Force Java to prefer IPv4 and /etc/hosts over mDNS for .local domains
+            // This fixes issues where mDNS advertises socket-proxy.local at a different IP
+            systemProperty 'java.net.preferIPv4Stack', 'true'
+            systemProperty 'jdk.net.hosts.file', '/etc/hosts'
+        }
+    }
 }
 
 repositories {
