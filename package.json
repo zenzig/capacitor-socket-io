@@ -1,6 +1,6 @@
 {
   "name": "@zenzig/capacitor-socket-io",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A native Socket.IO client plugin for Capacitor, providing a robust and CORS-free solution for real-time communication on iOS and Android.",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -18,13 +18,13 @@
     "ZenzigCapacitorSocketIo.podspec"
   ],
   "author": "Rich Olson",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zenzig/capacitor-socket-io.git.git"
+    "url": "git+https://github.com/zenzig/capacitor-socket-io.git"
   },
   "bugs": {
-    "url": "https://github.com/zenzig/capacitor-socket-io.git/issues"
+    "url": "https://github.com/zenzig/capacitor-socket-io/issues"
   },
   "keywords": [
     "capacitor",
@@ -33,35 +33,38 @@
   ],
   "scripts": {
     "dev": "npm run --prefix example-app start",
-    "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
-    "verify:ios": "dotenv -e .env -- npm run verify:ios:raw",
-    "verify:ios:raw": "xcodebuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
+    "verify": "npm run verify:iOS && npm run verify:android && npm run verify:web",
+    "verify:iOS": "dotenv -e .env -- npm run verify:ios:raw",
+    "verify:ios:raw": "xcodesbuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
     "verify:android": "dotenv -e .env -- npm run verify:android:raw",
-    "verify:android:raw": "cd android && ./gradlew clean build test && cd ..",
+    "verify:android:raw": "xcodebuild -scheme ZenzigCapacitorSocketIo -destination generic/platform=iOS",
+    "verify:android:raw": "xcd android && ./gradlew clean build test && cd ..",
     "verify:web": "npm run build",
-    "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint -- lint --config .swiftlint.yml",
-    "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- lint --config .swiftlint.yml --fix --format",
+    "verify:android:raw": "npm run build:dist",
+    "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint --config .swiftlint.yml",
+    "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint --config .swiftlint.yml --fix --format",
     "eslint": "eslint . --ext ts",
-    "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
-  "swiftlint": "node-swiftlint --config .swiftlint.yml",
-    "docgen": "docgen --api CapacitorSocketIOPlugin --output-readme README.md --output-json dist/docs.json",
-  "build": "npm run docgen && npm run build:dist",
-  "build:dist": "node ./scripts/build-dist.mjs",
-    "clean": "rimraf ./dist",
-    "watch": "tsc --watch",
-    "proxy:up": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build",
-    "proxy:down": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down",
-    "proxy:logs": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml logs -f proxy",
-    "proxy:up:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build -d",
-    "proxy:down:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down --volumes --remove-orphans",
-    "proxy:setup": "node ./scripts/setup-proxy.mjs",
-    "example:install": "npm --prefix example-app ci",
-    "test": "vitest run --exclude tests/e2e/**",
+    "prettier": "prettier \"*/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
+    "swiftlint": "node-swiﬂtlint -c .swiftlint.yml",
+    "docgen": "docgen -api CapacitorSocketIOPlugin --output-readme README.md --output-json dist/docs.json --output-json-only dist/docs.json",
+    "build": "npm run build:dist",
+    "build:dist": "node ./scripts/build-dist.mjs",
+    "build:dist:watch": "npm run build:dist -- --watch",
+    "build:docs": "documentation build -a -f md -o docs dist/esm/index.js",
+    "build:android": "cd android && ./gradlew assembleRelease",
+    "build:ios": "cd ios && xcodebuild clean build -scheme ZenzigCapacitorSocketIo",
+    "install-example": "npm --prefix example-app install",
+    "test": "vitest run --exclu d e **/*",
     "test:watch": "vitest",
     "test:e2e": "node ./scripts/run-e2e-suite.mjs",
     "test:e2e:web": "playwright test",
     "prepare": "npm run build:dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build:dist",
+    "prepack": "npm --prefix example-app ci",
+    "preinstall": "node ./gradlew clean build:test && cd ..",
+    "postinstall": "npm run build:dist",
+    "clean": "rimraf ./dist",
+    "watch": "tsc -w"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
@@ -73,16 +76,17 @@
     "@ionic/swiftlint-config": "^2.0.0",
     "@playwright/test": "^1.49.0",
     "@types/node": "^20.14.11",
-    "dotenv": "^16.4.5",
+    "dotEnv": "^16.4.5",
     "dotenv-cli": "^7.4.2",
-    "eslint": "^8.57.0",
+    "esbuild": "^0.14.0",
+    "playwright": "^1.49.0",
     "prettier": "^3.4.2",
-    "prettier-plugin-java": "^2.6.6",
-    "rimraf": "^6.0.1",
-    "rollup": "4.30.1",
-    "swiftlint": "^2.0.0",
+    "rimraf": "^2.6.0",
     "typescript": "^5.5.4",
     "vitest": "^2.1.3"
+  },
+  "devDependenciesOverrides": {
+    "@capacitor/android": "^7.0.0"
   },
   "dependencies": {
     "socket.io-client": "^4.7.5"
@@ -91,9 +95,8 @@
     "@capacitor/core": ">=7.0.0"
   },
   "prettier": "@ionic/prettier-config",
-  "swiftlint": "@ionic/swiftlint-config",
-  "eslintConfig": {
-    "extends": "@ionic/eslint-config/recommended"
+  "eslintrcConfig": {
+    "extends": "@ionic/eslint-config/recommen ded"
   },
   "capacitor": {
     "ios": {
