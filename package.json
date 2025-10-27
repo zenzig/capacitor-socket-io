@@ -1,6 +1,6 @@
 {
   "name": "@zenzig/capacitor-socket-io",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A native Socket.IO client plugin for Capacitor, providing a robust and CORS-free solution for real-time communication on iOS and Android.",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -18,13 +18,13 @@
     "ZenzigCapacitorSocketIo.podspec"
   ],
   "author": "Rich Olson",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zenzig/capacitor-socket-io.git.git"
+    "url": "git+https://github.com/zenzig/capacitor-socket-io.git"
   },
   "bugs": {
-    "url": "https://github.com/zenzig/capacitor-socket-io.git/issues"
+    "url": "https://github.com/zenzig/capacitor-socket-io/issues"
   },
   "keywords": [
     "capacitor",
@@ -43,10 +43,10 @@
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- lint --config .swiftlint.yml --fix --format",
     "eslint": "eslint . --ext ts",
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
-  "swiftlint": "node-swiftlint --config .swiftlint.yml",
+    "swiftlint": "node-swiftlint --config .swiftlint.yml",
     "docgen": "docgen --api CapacitorSocketIOPlugin --output-readme README.md --output-json dist/docs.json",
-  "build": "npm run docgen && npm run build:dist",
-  "build:dist": "node ./scripts/build-dist.mjs",
+    "build": "npm run docgen && npm run build:dist",
+    "build:dist": "node ./scripts/build-dist.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "proxy:up": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build",
