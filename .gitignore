@@ -16,6 +16,7 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 
+ai-project-starter/
 
 
 # macOS files
@@ -38,7 +39,9 @@ docker/certs/*.pem
 # Playwright artifacts
 playwright-report/
 test-results/
-
+capacitor-llama-cpp.xml
+capacitor-socket-io.xml
+modern-ejs-starter.xml
 
 # Repomix bundles
 repomix-output.*
