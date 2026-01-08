@@ -1,36 +1,31 @@
 import { spawnSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config as loadEnv } from 'dotenv';
 import { computeHostsUpdate, extractHostIps } from './lib/hosts-utils.mjs';
+import { extractCaFromVolume, waitForProxy, installCaOnMacOS } from './export-caddy-ca.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const envExamplePath = path.join(repoRoot, '.env.example');
 const envPath = path.join(repoRoot, '.env');
 const certDir = path.join(repoRoot, 'docker', 'certs');
-const certPath = path.join(certDir, 'socket-proxy.pem');
-const keyPath = path.join(certDir, 'socket-proxy-key.pem');
+const caCertPath = path.join(certDir, 'caddy-root.crt');
 const rawArgs = process.argv.slice(2);
 const options = parseArgs(rawArgs);
-const { force, noStart, host: hostOverride, port: portOverride, writeHosts } = options;
+const { noStart, host: hostOverride, port: portOverride, writeHosts, resetCa } = options;
 
 function logStep(message) {
   console.log(`\n▶ ${message}`);
 }
 
 function parseArgs(args) {
-  const result = { force: false, noStart: false, host: undefined, port: undefined, writeHosts: false };
+  const result = { noStart: false, host: undefined, port: undefined, writeHosts: false, resetCa: false };
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-
-    if (arg === '--force') {
-      result.force = true;
-      continue;
-    }
 
     if (arg === '--no-start') {
       result.noStart = true;
@@ -39,6 +34,11 @@ function parseArgs(args) {
 
     if (arg === '--write-hosts') {
       result.writeHosts = true;
+      continue;
+    }
+
+    if (arg === '--reset-ca') {
+      result.resetCa = true;
       continue;
     }
 
@@ -392,30 +392,19 @@ function ensureHostsEntryWritten({ host, ip, hostsFile, initialContent }) {
   }
 }
 
-function ensureMkcert() {
-  const result = spawnSync('mkcert', ['-help'], { stdio: 'ignore' });
-  if (result.error || result.status !== 0) {
-    throw new Error('mkcert is required. Install it via "brew install mkcert" (macOS) or see https://github.com/FiloSottile/mkcert for instructions.');
+function resetCaddyCa() {
+  logStep('Resetting Caddy CA (removing data volume)');
+  const result = spawnSync('docker', ['volume', 'rm', '-f', 'capacitor-socket-io_caddy_data'], { stdio: 'pipe' });
+  if (result.status === 0) {
+    console.log('Caddy data volume removed. A new CA will be generated on next startup.');
+  } else {
+    const stderr = result.stderr?.toString().trim();
+    if (stderr?.includes('No such volume')) {
+      console.log('No existing Caddy data volume found.');
+    } else {
+      console.warn('Could not remove volume:', stderr || 'unknown error');
+    }
   }
-}
-
-function ensureCerts(host, { force }) {
-  mkdirSync(certDir, { recursive: true });
-
-  if (!force && existsSync(certPath) && existsSync(keyPath)) {
-    console.log('Certificate already exists. Use --force to regenerate.');
-    return;
-  }
-
-  if (force) {
-    console.log('--force supplied, regenerating certificate.');
-  }
-
-  logStep(`Installing mkcert root CA (may prompt for password)`);
-  run('mkcert', ['-install']);
-
-  logStep(`Generating development certificate for ${host}`);
-  run('mkcert', ['-cert-file', certPath, '-key-file', keyPath, host, `*.${host}`]);
 }
 
 function assertDockerDaemon() {
@@ -456,7 +445,7 @@ function startProxyStack({ port }) {
   });
 }
 
-function main() {
+async function main() {
   logStep('Preparing environment');
   ensureEnvFile();
   loadEnv({ path: envPath });
@@ -523,8 +512,10 @@ function main() {
     console.log(`Updated E2E_DEV_SERVER_HOST to ${preferredDevServerHost}.`);
   }
 
-  ensureMkcert();
-  ensureCerts(host, { force });
+  // Reset Caddy CA if requested (useful if CA expired or needs regeneration)
+  if (resetCa) {
+    resetCaddyCa();
+  }
 
   logStep('Checking hosts file');
   checkHostsEntry(host, { writeHosts });
@@ -536,6 +527,10 @@ function main() {
     assertDockerDaemon();
     startProxyStack({ port });
     console.log(`\n✅ Proxy ready at ${proxyUrl}`);
+
+    // Export Caddy's root CA for device trust
+    logStep('Exporting Caddy root CA certificate');
+    await exportCaddyCa();
   } else {
     console.log(`\n⚠️  Skipping Docker startup (--no-start). Run "npm run proxy:up" when you're ready to launch the stack (target port ${port}).`);
   }
@@ -543,12 +538,31 @@ function main() {
   console.log('\nNext steps:');
   if (noStart) {
     console.log('  • Start the proxy manually with "npm run proxy:up" (or rerun without --no-start).');
-    console.log('  • After it is running, use "npm run proxy:logs" to monitor Nginx.');
+    console.log('  • After it is running, use "npm run proxy:logs" to monitor Caddy.');
   } else {
-    console.log('  • Run "npm run proxy:logs" in another terminal to monitor Nginx.');
+    console.log('  • Run "npm run proxy:logs" in another terminal to monitor Caddy.');
   }
-  console.log('  • Ensure your Android emulator/iOS simulator trusts the mkcert root CA.');
+  console.log('  • Install docker/certs/caddy-root.crt on your Android emulator/iOS simulator.');
   console.log('  • From example-app/, run "npm install" (first time) then "npm run test:android" or "npm run test:ios".');
+}
+
+async function exportCaddyCa() {
+  // Wait for proxy to be ready and trigger CA generation
+  await waitForProxy();
+  
+  // Extract the CA certificate
+  const success = await extractCaFromVolume();
+  if (success) {
+    console.log('  ✔ Root CA exported to docker/certs/caddy-root.crt');
+    
+    // Auto-install on macOS
+    if (process.platform === 'darwin') {
+      logStep('Installing CA certificate on macOS');
+      await installCaOnMacOS(caCertPath);
+    }
+  } else {
+    console.warn('  ⚠️  Could not export CA. Run "npm run proxy:export-ca" after making an HTTPS request.');
+  }
 }
 
 const isCliExecution = (() => {
@@ -558,12 +572,10 @@ const isCliExecution = (() => {
 })();
 
 if (isCliExecution) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     console.error(`\n❌ Setup failed: ${error.message}`);
     process.exitCode = 1;
-  }
+  });
 }
 
 export { checkHostsEntry, ensureHostsEntryWritten, resolveHostsFile };

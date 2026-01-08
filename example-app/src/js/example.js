@@ -284,7 +284,7 @@ function hydrateSelfSignedToggle() {
     ui.allowSelfSignedToggle.disabled = state.isProduction;
     ui.allowSelfSignedToggle.title = state.isProduction
         ? 'Production builds require trusted certificates.'
-        : 'Development helper – only use with mkcert/self-signed proxies.';
+        : 'Development helper – allows connections to self-signed HTTPS proxies.';
 }
 
 function attachUiListeners() {

@@ -1,78 +1,100 @@
-# Socket.IO proxy docker setup
+# Socket.IO Proxy Docker Setup
 
 This folder contains a two-container stack that mirrors a production deployment:
 
-- `socketio`: a Socket.IO upstream server that echoes events.
-- `proxy`: an Nginx TLS reverse proxy that terminates HTTPS and forwards traffic to `socketio`.
+- `socketio`: a Socket.IO upstream server that echoes events
+- `proxy`: a Caddy TLS reverse proxy that terminates HTTPS and forwards traffic to `socketio`
 
-## Usage
+Caddy uses its built-in internal CA to generate trusted certificates for any domain name (including
+made-up ones like `socket-proxy.local`). No external tools like mkcert are required.
 
-> **Shortcut:** Run `npm run proxy:setup` from the repository root to execute the steps below
-> automatically. The script checks for mkcert, generates certificates, normalises `.env`, and starts
-> the stack detached (Docker must be running). Need a different hostname? Pass
-> `--host dev.example.com`. Want to skip launching containers on this machine? Append `--no-start`.
-> The proxy binds to port 443; if the script reports that the port is busy, stop the conflicting
-> service before restarting setup. The script also rewrites `E2E_DEV_SERVER_HOST` in `.env` so
-> Playwright-based flows bind to the same interface.
-> Manual instructions remain available for fine-grained control.
-
-1. Generate a trusted certificate for `socket-proxy.local` (see `docs/testing-with-proxy.md`).
-2. Copy the certificate files into `docker/certs/` as `socket-proxy.pem` (certificate chain) and
-   `socket-proxy-key.pem` (private key). The directory is ignored by git so you can safely store
-   local certs here.
-3. Ensure the hostname resolves to your machine by mapping it to your LAN IP (for example add
-   `192.168.0.28 socket-proxy.local` to `/etc/hosts`). Run `npm run proxy:setup --write-hosts`
-   on macOS/Linux to attempt the change automatically (you’ll be prompted for sudo if required).
-4. From the repository root, run:
-
-   ```bash
-   npm run proxy:up
-   ```
-
-   This builds the upstream server image, starts both containers, and exposes HTTPS on port 443.
-
-5. Export or record `SOCKET_IO_PROXY_URL=https://socket-proxy.local` — the script writes this
-   automatically when you use `npm run proxy:setup`. Set
-   `SOCKET_SERVER_AUTH_SECRET` (or the passphrase variant described below) if you want the upstream
-   server to require JWTs during the Socket.IO handshake.
-6. When you are done, stop the stack with:
-
-   ```bash
-   npm run proxy:down
-   ```
-
-Use `npm run proxy:logs` to follow Nginx output while debugging, or verify the stack is healthy with
-`curl -sk https://socket-proxy.local/healthz`.
-
-## Enforcing JWT authentication
-
-The upstream server can validate JSON Web Tokens before accepting connections. Add the following
-environment variables to `.env` (or export them manually) before running `npm run proxy:up`:
-
-- `SOCKET_SERVER_AUTH_SECRET` – raw signing secret shared with clients, or
-- `SOCKET_SERVER_AUTH_PASSPHRASE` plus optional `SOCKET_SERVER_AUTH_SALT` – derives a secret using
-   PBKDF2 via `pbkdf2-password-hash`.
-- Optional: `SOCKET_SERVER_AUTH_ISSUER`, `SOCKET_SERVER_AUTH_AUDIENCE`,
-   `SOCKET_SERVER_AUTH_CLOCK_TOLERANCE` (seconds) to tighten claim validation.
-
-Clients must send a JWT in one of three locations: `socket.handshake.auth.token`, a `token` query
-parameter, or an `Authorization: Bearer <token>` header. The decoded claims are exposed to event
-handlers as `socket.auth` for additional authorization checks.
-
-To mint a token for local testing, run:
+## Quick Start
 
 ```bash
-SOCKET_SERVER_AUTH_SECRET=unit-test-secret node --input-type=module <<'NODE'
+npm run proxy:setup -- --write-hosts
+```
+
+This single command:
+1. Creates `.env` from `.env.example` if missing
+2. Detects your LAN IP and updates `.env` variables
+3. Updates `/etc/hosts` with the LAN IP mapping
+4. Starts the Docker stack with Caddy + Socket.IO server
+5. Installs Caddy's root CA on macOS for trusted HTTPS
+
+## Setup Options
+
+| Flag | Description |
+|------|-------------|
+| `--host <hostname>` | Override the proxy hostname (default: `socket-proxy.local`) |
+| `--port <port>` | Override the HTTPS port (default: `443`) |
+| `--write-hosts` | Auto-update `/etc/hosts` with LAN IP mapping |
+| `--no-start` | Configure `.env` only, don't start Docker |
+| `--reset-ca` | Remove Caddy's CA volume before starting (regenerates certificates) |
+
+## Proxy Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run proxy:up` | Start the proxy stack |
+| `npm run proxy:down` | Stop the proxy stack |
+| `npm run proxy:logs` | Tail Caddy logs |
+| `npm run proxy:setup` | Full setup (configure + start + install CA) |
+| `npm run proxy:reset-ca` | Remove CA volume for regeneration |
+
+## Self-Signed Certificate Handling
+
+The example app and plugin include a **debug-only trust-all SSL mode**:
+
+- Enabled by default in the example app via the "Allow Untrusted Certs" checkbox
+- **No manual certificate installation required** on emulators or simulators
+- In production, only properly signed certificates are accepted
+
+This means you can connect to the proxy from iOS simulators and Android emulators without
+dragging certificate files or configuring trust settings.
+
+## Production Mode (Real Certificates)
+
+To use Let's Encrypt/ZeroSSL instead of Caddy's internal CA:
+
+1. Set `TLS_EMAIL` in `.env` to a valid email address
+2. Use a real domain name for `SOCKET_PROXY_HOST`
+3. Ensure your domain has valid DNS pointing to your server
+4. Ports 80 and 443 must be externally accessible
+
+```bash
+# .env
+TLS_EMAIL=admin@example.com
+SOCKET_PROXY_HOST=your-real-domain.com
+```
+
+When `TLS_EMAIL` is set, Caddy uses ACME to obtain real certificates.
+
+## JWT Authentication (Optional)
+
+The upstream server can validate JSON Web Tokens before accepting connections. Add these
+environment variables to `.env` before running `npm run proxy:up`:
+
+- `SOCKET_SERVER_AUTH_SECRET` - raw signing secret shared with clients, or
+- `SOCKET_SERVER_AUTH_PASSPHRASE` plus optional `SOCKET_SERVER_AUTH_SALT` - derives a secret using PBKDF2
+
+Clients must send a JWT in one of three locations:
+- `socket.handshake.auth.token`
+- A `token` query parameter
+- An `Authorization: Bearer <token>` header
+
+Mint a token for local testing:
+
+```bash
+SOCKET_SERVER_AUTH_SECRET=dev-secret node --input-type=module <<'NODE'
 import jwt from 'jsonwebtoken';
 
-const secret = process.env.SOCKET_SERVER_AUTH_SECRET;
 const token = jwt.sign(
    { sub: 'developer', scopes: ['presence'] },
-   secret,
+   process.env.SOCKET_SERVER_AUTH_SECRET,
    {
       expiresIn: '15m',
-      issuer: process.env.SOCKET_SERVER_AUTH_ISSUER ?? 'socket-proxy.local',
-      audience: process.env.SOCKET_SERVER_AUTH_AUDIENCE ?? 'socket-proxy-clients',
+      issuer: 'socket-proxy.local',
+      audience: 'socket-proxy-clients',
    },
 );
 
@@ -80,5 +102,11 @@ console.log(token);
 NODE
 ```
 
-Then supply the token via `auth: { token }` when instantiating `socket.io-client` or include it as a
-Bearer token header when connecting from custom tooling.
+## Resetting the CA
+
+If you need to regenerate Caddy's CA:
+
+```bash
+npm run proxy:reset-ca
+npm run proxy:setup
+```

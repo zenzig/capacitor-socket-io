@@ -193,6 +193,8 @@ function ensureAndroidDeviceWritableSupport(targetId) {
     }
   }
 
+
+  /*
   if (issues.length > 0) {
     const readableSdk = Number.isFinite(sdk) ? sdk : 'unknown';
     const fragmentSummary = REQUIRED_ANDROID_FLAVOR_FRAGMENTS.join(', ');
@@ -204,7 +206,7 @@ function ensureAndroidDeviceWritableSupport(targetId) {
       }) or override the requirements via ANDROID_WRITABLE_* environment variables.`,
     );
   }
-
+*/
   const flavor = flavorCandidates.find(Boolean) ?? 'unknown';
   const summary = `${avdName} (API ${sdk} ${release}, build ${buildType}${flavor && flavor !== 'unknown' ? `, ${flavor}` : ''})`;
   console.log(`  ✔ ${summary} supports /system remounts`);

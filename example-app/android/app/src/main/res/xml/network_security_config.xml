@@ -4,7 +4,7 @@
         <trust-anchors>
             <!-- Trust the default system CAs -->
             <certificates src="system" />
-            <!-- Also trust user-added CAs (e.g. mkcert on emulators/devices) -->
+            <!-- Also trust user-added CAs (e.g. Caddy internal CA on emulators/devices) -->
             <certificates src="user" />
         </trust-anchors>
     </base-config>

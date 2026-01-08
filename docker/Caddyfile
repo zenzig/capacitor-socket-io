@@ -1,0 +1,51 @@
+# Caddyfile for Socket.IO Capacitor Native Bridge Proxy
+#
+# Environment Variables:
+#   SOCKET_PROXY_HOST - Hostname for the proxy (default: socket-proxy.local)
+#   TLS_EMAIL         - Email for ACME registration (optional for internal mode)
+#
+# This configuration uses Caddy's internal CA by default, which generates
+# trusted certificates for any domain (including made-up ones like socket-proxy.local).
+# For production with real domains, set TLS_EMAIL and ensure DNS + ports are configured.
+{
+	# Global options
+	admin off
+
+	# Use local CA for automatic internal certificate generation
+	local_certs
+}
+
+{$SOCKET_PROXY_HOST:socket-proxy.local} {
+	# TLS configuration - uses Caddy's internal CA for local development
+	# This generates trusted certificates for any domain including made-up ones
+	tls internal
+
+	# Health check endpoint
+	handle /healthz {
+		header Content-Type application/json
+		header Cache-Control no-store
+		respond `{"status":"ok"}` 200
+	}
+
+	# Socket.IO reverse proxy with WebSocket support
+	handle /socket.io/* {
+		reverse_proxy socketio:4000 {
+			# WebSocket headers are handled automatically by Caddy
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Static file server for proxy UI with SPA fallback
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Logging
+	log {
+		output stdout
+		format console
+	}
+}

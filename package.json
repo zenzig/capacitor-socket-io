@@ -55,6 +55,8 @@
     "proxy:up:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml up --build -d",
     "proxy:down:ci": "dotenv -e .env -- docker compose -f docker/docker-compose.proxy.yml down --volumes --remove-orphans",
     "proxy:setup": "node ./scripts/setup-proxy.mjs",
+    "proxy:export-ca": "node ./scripts/export-caddy-ca.mjs --wait",
+    "proxy:reset-ca": "docker volume rm -f capacitor-socket-io_caddy_data && echo 'CA volume removed. Run npm run proxy:setup to regenerate.'",
     "example:install": "npm --prefix example-app ci",
     "test": "vitest run --exclude tests/e2e/**",
     "test:watch": "vitest",
