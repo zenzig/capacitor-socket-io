@@ -266,6 +266,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
             return;
         }
 
+        SocketIOForegroundSession.configureEventNotifications(context, config);
         Intent intent = SocketIOForegroundService.startIntent(context, title, text, notificationId);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent);
@@ -280,6 +281,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
             SocketIOForegroundSession.setServiceRunning(false);
             return;
         }
+        SocketIOForegroundSession.clearEventNotifications();
         context.startService(SocketIOForegroundService.stopIntent(context));
     }
 

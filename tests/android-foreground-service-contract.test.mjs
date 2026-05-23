@@ -16,7 +16,9 @@ describe('Android foreground socket service contract', () => {
     const definitions = read('src/definitions.ts');
 
     expect(definitions).toContain('SocketIOForegroundServiceOptions');
+    expect(definitions).toContain('SocketIOEventNotificationOptions');
     expect(definitions).toContain('foregroundService?: boolean | SocketIOForegroundServiceOptions');
+    expect(definitions).toContain('eventNotifications?: SocketIOEventNotificationOptions[]');
     expect(definitions).toContain('drainBufferedEvents');
     expect(definitions).toContain('isForegroundServiceRunning');
   });
@@ -32,5 +34,17 @@ describe('Android foreground socket service contract', () => {
     expect(service).toContain('startForeground');
     expect(session).toContain('bufferedEvents');
     expect(session).toContain('drainBufferedEvents');
+  });
+
+  it('can post configured notifications for foreground socket terminal events', () => {
+    const plugin = read('android/src/main/java/com/zenzig/plugins/socketio/CapacitorSocketIOPlugin.java');
+    const session = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOForegroundSession.java');
+
+    expect(plugin).toContain('configureEventNotifications');
+    expect(session).toContain('eventNotifications');
+    expect(session).toContain('deepLinkPrefix');
+    expect(session).toContain('NotificationManager');
+    expect(session).toContain('setData(Uri.parse');
+    expect(session).toContain('researchJobId');
   });
 });

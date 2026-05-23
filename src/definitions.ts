@@ -25,6 +25,26 @@ export interface SocketIOForegroundServiceOptions {
   notificationText?: string;
   /** Stable Android notification id for this foreground socket session. */
   notificationId?: number;
+  /** Optional Android notifications to post when specific socket events arrive in foreground-service mode. */
+  eventNotifications?: SocketIOEventNotificationOptions[];
+}
+
+/**
+ * Android notification options for a foreground-service socket event.
+ */
+export interface SocketIOEventNotificationOptions {
+  /** Socket.IO event name that should post a completion/status notification. */
+  event: string;
+  /** Notification title shown for this event. */
+  notificationTitle?: string;
+  /** Notification body shown for this event. */
+  notificationText?: string;
+  /** Stable Android notification id for this event notification. */
+  notificationId?: number;
+  /** Deep-link prefix used with the extracted event id. */
+  deepLinkPrefix?: string;
+  /** Field name to read from the first event argument. Defaults to `id`. */
+  idField?: string;
 }
 
 /**
