@@ -41,6 +41,7 @@ const state = {
     socketId: undefined,
     serverUrl: undefined,
     authToken: '',
+    useForegroundService: false,
 };
 
 const ui = {};
@@ -50,6 +51,7 @@ let pingSequence = 0;
 state.identity = loadIdentity();
 state.allowSelfSigned = !state.isProduction;
 state.authToken = loadAuthToken();
+state.useForegroundService = state.identity.origin === 'android';
 
 function detectProduction() {
     if (typeof process !== 'undefined' && typeof process.env?.NODE_ENV === 'string') {
@@ -179,6 +181,7 @@ function cacheDom() {
     ui.serverUrlInput = document.getElementById('serverUrl');
     ui.authTokenInput = document.getElementById('authToken');
     ui.allowSelfSignedToggle = document.getElementById('allowSelfSigned');
+    ui.foregroundServiceToggle = document.getElementById('foregroundService');
     ui.connectButton = document.getElementById('connectBtn');
     ui.disconnectButton = document.getElementById('disconnectBtn');
     ui.pingMessageInput = document.getElementById('pingMessage');
@@ -198,6 +201,7 @@ function initialiseDom() {
     hydrateAliasControls();
     hydrateAuthTokenField();
     hydrateSelfSignedToggle();
+    hydrateForegroundServiceToggle();
     attachUiListeners();
     setConnected(false);
     renderPresenceList();
@@ -287,6 +291,18 @@ function hydrateSelfSignedToggle() {
         : 'Development helper – allows connections to self-signed HTTPS proxies.';
 }
 
+function hydrateForegroundServiceToggle() {
+    if (!ui.foregroundServiceToggle) {
+        return;
+    }
+
+    ui.foregroundServiceToggle.checked = state.useForegroundService;
+    ui.foregroundServiceToggle.disabled = state.identity.origin !== 'android';
+    ui.foregroundServiceToggle.title = state.identity.origin === 'android'
+        ? 'Keeps the native Socket.IO session alive while the app is backgrounded.'
+        : 'Foreground socket service is only available on Android.';
+}
+
 function attachUiListeners() {
     ui.deviceAliasInput?.addEventListener('input', onAliasInputChange);
     ui.saveAliasButton?.addEventListener('click', saveAlias);
@@ -322,6 +338,14 @@ function attachUiListeners() {
         }
 
         state.allowSelfSigned = !!ui.allowSelfSignedToggle.checked;
+    });
+
+    ui.foregroundServiceToggle?.addEventListener('change', () => {
+        if (!ui.foregroundServiceToggle) {
+            return;
+        }
+
+        state.useForegroundService = !!ui.foregroundServiceToggle.checked;
     });
 }
 
@@ -478,6 +502,7 @@ async function connect() {
         url: targetUrl,
         allowSelfSigned: state.allowSelfSigned,
         authTokenProvided: authToken.length > 0,
+        foregroundService: state.useForegroundService,
     });
 
     setConnectingState(true);
@@ -488,7 +513,14 @@ async function connect() {
             options: {
                 allowSelfSigned: state.allowSelfSigned,
                 path: '/socket.io',
-                transports: ['websocket'],
+                transports: ['polling', 'websocket'],
+                foregroundService: state.useForegroundService
+                    ? {
+                        enabled: true,
+                        notificationTitle: 'Socket.IO example',
+                        notificationText: 'Keeping the proxy socket connected.',
+                    }
+                    : false,
                 reconnection: true,
                 timeout: 10_000,
                 auth: authPayload,

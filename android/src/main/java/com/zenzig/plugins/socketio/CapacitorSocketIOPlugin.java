@@ -1,7 +1,9 @@
 package com.zenzig.plugins.socketio;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import com.getcapacitor.JSArray;
@@ -19,9 +21,12 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -41,11 +46,13 @@ public class CapacitorSocketIOPlugin extends Plugin {
     private final CapacitorSocketIO socketManager = new CapacitorSocketIO();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean usingForegroundSession;
 
     @Override
     public void load() {
         super.load();
         socketManager.setEventListener(this::handleSocketEvent);
+        SocketIOForegroundSession.setPluginEventListener(this::handleSocketEvent);
     }
 
     @PluginMethod
@@ -57,11 +64,17 @@ public class CapacitorSocketIOPlugin extends Plugin {
         ioExecutor.execute(() -> {
             try {
                 IO.Options ioOptions = buildIoOptions(url, options);
-                socketManager.connect(url, ioOptions);
+                boolean foregroundService = isForegroundServiceEnabled(options);
+                usingForegroundSession = foregroundService;
+                if (foregroundService) {
+                    startSocketForegroundService(options);
+                }
+                activeSocketManager().connect(url, ioOptions);
 
                 JSObject result = new JSObject();
                 result.put("status", "connecting");
                 result.put("url", url);
+                result.put("foregroundService", foregroundService);
                 resolveOnUiThread(call, result);
             } catch (URISyntaxException uriEx) {
                 rejectOnUiThread(call, "Invalid Socket.IO endpoint: " + uriEx.getMessage(), uriEx);
@@ -74,7 +87,11 @@ public class CapacitorSocketIOPlugin extends Plugin {
     @PluginMethod
     public void disconnect(PluginCall call) {
         ioExecutor.execute(() -> {
-            socketManager.disconnect();
+            activeSocketManager().disconnect();
+            if (usingForegroundSession || SocketIOForegroundSession.isServiceRunning()) {
+                stopSocketForegroundService();
+            }
+            usingForegroundSession = false;
             JSObject result = new JSObject();
             result.put("status", "disconnected");
             resolveOnUiThread(call, result);
@@ -95,7 +112,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
         ioExecutor.execute(() -> {
             try {
                 Object[] payload = buildEmitPayload(data, argsArray);
-                socketManager.emit(event, payload);
+                activeSocketManager().emit(event, payload);
 
                 JSObject result = new JSObject();
                 result.put("event", event);
@@ -120,11 +137,60 @@ public class CapacitorSocketIOPlugin extends Plugin {
         }
 
         socketManager.listenTo(event);
+        SocketIOForegroundSession.getSocketManager().listenTo(event);
 
         JSObject result = new JSObject();
         result.put("event", event);
         result.put("status", "listening");
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void drainBufferedEvents(PluginCall call) {
+        JSArray requestedEvents = call.getArray("events");
+        Set<String> filter = new HashSet<>();
+        if (requestedEvents != null) {
+            for (int i = 0; i < requestedEvents.length(); i++) {
+                String event = requestedEvents.optString(i, "");
+                if (event != null && !event.trim().isEmpty()) {
+                    filter.add(event.trim());
+                }
+            }
+        }
+
+        List<SocketIOForegroundSession.BufferedEvent> drained = SocketIOForegroundSession.drainBufferedEvents(filter);
+        JSArray events = new JSArray();
+        for (SocketIOForegroundSession.BufferedEvent event : drained) {
+            JSObject payload = new JSObject();
+            payload.put("event", event.eventName);
+            payload.put("args", toJSArray(event.args));
+            payload.put("receivedAt", event.receivedAt);
+            events.put(payload);
+        }
+
+        JSObject result = new JSObject();
+        result.put("events", events);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void isForegroundServiceRunning(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("running", SocketIOForegroundSession.isServiceRunning());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void stopForegroundService(PluginCall call) {
+        ioExecutor.execute(() -> {
+            activeSocketManager().disconnect();
+            stopSocketForegroundService();
+            usingForegroundSession = false;
+
+            JSObject result = new JSObject();
+            result.put("running", SocketIOForegroundSession.isServiceRunning());
+            resolveOnUiThread(call, result);
+        });
     }
 
     @Override
@@ -145,6 +211,7 @@ public class CapacitorSocketIOPlugin extends Plugin {
         }
 
         socketManager.setEventListener(null);
+        SocketIOForegroundSession.setPluginEventListener(null);
     }
 
     private void handleSocketEvent(String eventName, Object[] args) {
@@ -157,13 +224,71 @@ public class CapacitorSocketIOPlugin extends Plugin {
         payload.put("args", toJSArray(args));
 
         if (Socket.EVENT_CONNECT.equals(eventName)) {
-            Socket activeSocket = socketManager.getSocket();
+            Socket activeSocket = activeSocketManager().getSocket();
             if (activeSocket != null) {
                 payload.put("id", activeSocket.id());
             }
         }
 
         notifyOnUiThread(eventName, payload);
+    }
+
+    private CapacitorSocketIO activeSocketManager() {
+        if (usingForegroundSession || SocketIOForegroundSession.isServiceRunning()) {
+            return SocketIOForegroundSession.getSocketManager();
+        }
+        return socketManager;
+    }
+
+    private boolean isForegroundServiceEnabled(JSObject options) {
+        if (options == null || !options.has("foregroundService")) {
+            return false;
+        }
+
+        Object raw = options.opt("foregroundService");
+        if (raw instanceof Boolean) {
+            return (Boolean) raw;
+        }
+        if (raw instanceof JSONObject) {
+            return ((JSONObject) raw).optBoolean("enabled", true);
+        }
+
+        return false;
+    }
+
+    private void startSocketForegroundService(JSObject options) {
+        JSONObject config = foregroundServiceConfig(options);
+        String title = config.optString("notificationTitle", "Socket.IO connection active");
+        String text = config.optString("notificationText", "Keeping a real-time connection available.");
+        int notificationId = config.optInt("notificationId", SocketIOForegroundSession.DEFAULT_NOTIFICATION_ID);
+        Context context = getContext();
+        if (context == null) {
+            return;
+        }
+
+        Intent intent = SocketIOForegroundService.startIntent(context, title, text, notificationId);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent);
+        } else {
+            context.startService(intent);
+        }
+    }
+
+    private void stopSocketForegroundService() {
+        Context context = getContext();
+        if (context == null) {
+            SocketIOForegroundSession.setServiceRunning(false);
+            return;
+        }
+        context.startService(SocketIOForegroundService.stopIntent(context));
+    }
+
+    private JSONObject foregroundServiceConfig(JSObject options) {
+        Object raw = options != null ? options.opt("foregroundService") : null;
+        if (raw instanceof JSONObject) {
+            return (JSONObject) raw;
+        }
+        return new JSONObject();
     }
 
     private IO.Options buildIoOptions(String url, JSObject options) {

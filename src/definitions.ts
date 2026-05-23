@@ -13,6 +13,29 @@ export interface SocketEventPayload {
 }
 
 /**
+ * Android foreground-service options used to keep a native Socket.IO session
+ * available while the WebView is backgrounded.
+ */
+export interface SocketIOForegroundServiceOptions {
+  /** Enables foreground service mode. Defaults to true when an object is supplied. */
+  enabled?: boolean;
+  /** Notification title shown while the foreground socket is active. */
+  notificationTitle?: string;
+  /** Notification body shown while the foreground socket is active. */
+  notificationText?: string;
+  /** Stable Android notification id for this foreground socket session. */
+  notificationId?: number;
+}
+
+/**
+ * Buffered Socket.IO event captured by native code while JS may be suspended.
+ */
+export interface BufferedSocketEventPayload extends SocketEventPayload {
+  /** Unix epoch timestamp in milliseconds when native received the event. */
+  receivedAt: number;
+}
+
+/**
  * Configuration forwarded to the Socket.IO client during the `connect` handshake.
  */
 export interface SocketIOConnectOptions {
@@ -34,6 +57,8 @@ export interface SocketIOConnectOptions {
   query?: Record<string, string> | string;
   /** Transport whitelist (e.g. `['websocket']`). */
   transports?: string[];
+  /** Android-only foreground service mode for durable background work. */
+  foregroundService?: boolean | SocketIOForegroundServiceOptions;
   /**
    * Authentication payload supplied during the Socket.IO handshake. Values are
    * serialised to strings when forwarded to native layers that only support
@@ -107,6 +132,30 @@ export interface ListenResult {
 }
 
 /**
+ * Options accepted by {@link CapacitorSocketIOPlugin.drainBufferedEvents}.
+ */
+export interface DrainBufferedEventsOptions {
+  /** Optional event-name filter. Empty or omitted drains all buffered events. */
+  events?: string[];
+}
+
+/**
+ * Result returned by {@link CapacitorSocketIOPlugin.drainBufferedEvents}.
+ */
+export interface DrainBufferedEventsResult {
+  /** Native buffered events in receive order. */
+  events: BufferedSocketEventPayload[];
+}
+
+/**
+ * Result returned by foreground-service status APIs.
+ */
+export interface ForegroundServiceStatusResult {
+  /** True when the Android foreground socket service is active. */
+  running: boolean;
+}
+
+/**
  * Public API contract exposed by the Capacitor Socket.IO plugin.
  */
 export interface CapacitorSocketIOPlugin {
@@ -137,6 +186,21 @@ export interface CapacitorSocketIOPlugin {
    * @returns Listen status metadata confirming the subscription.
    */
   on(options: { event: string }): Promise<ListenResult>;
+  /**
+   * Drains native-buffered events captured while JavaScript was suspended.
+   *
+   * @param options - Optional event-name filter.
+   * @returns Buffered events in receive order.
+   */
+  drainBufferedEvents(options?: DrainBufferedEventsOptions): Promise<DrainBufferedEventsResult>;
+  /**
+   * Returns whether the Android foreground socket service is active.
+   */
+  isForegroundServiceRunning(): Promise<ForegroundServiceStatusResult>;
+  /**
+   * Stops the Android foreground socket service and disconnects the foreground socket.
+   */
+  stopForegroundService(): Promise<ForegroundServiceStatusResult>;
   /**
    * Registers a listener for a previously subscribed Socket.IO event.
    *

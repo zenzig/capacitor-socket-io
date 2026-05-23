@@ -5,8 +5,11 @@ import type {
   CapacitorSocketIOPlugin,
   ConnectOptions,
   ConnectResult,
+  DrainBufferedEventsOptions,
+  DrainBufferedEventsResult,
   EmitOptions,
   EmitResult,
+  ForegroundServiceStatusResult,
   ListenResult,
   SocketEventPayload,
   SocketIOConnectOptions,
@@ -120,6 +123,27 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
     this.requestedEvents.add(trimmedEvent);
     this.attachDynamicListener(trimmedEvent);
     return { status: 'listening', event: trimmedEvent };
+  }
+
+  /**
+   * Web has no native foreground buffer; this mirrors the native API as a no-op.
+   */
+  async drainBufferedEvents(_options?: DrainBufferedEventsOptions): Promise<DrainBufferedEventsResult> {
+    return { events: [] };
+  }
+
+  /**
+   * Web has no Android foreground service.
+   */
+  async isForegroundServiceRunning(): Promise<ForegroundServiceStatusResult> {
+    return { running: false };
+  }
+
+  /**
+   * Web has no Android foreground service to stop.
+   */
+  async stopForegroundService(): Promise<ForegroundServiceStatusResult> {
+    return { running: false };
   }
 
   /**
