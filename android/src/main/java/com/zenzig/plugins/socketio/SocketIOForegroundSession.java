@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
@@ -68,6 +69,51 @@ public final class SocketIOForegroundSession {
 
     public static synchronized void setServiceRunning(boolean running) {
         serviceRunning = running;
+    }
+
+    /**
+     * Forwards the Android foreground-service-timeout lifecycle event (dataSync's
+     * 6h/24h budget was exhausted) to the plugin as a synthetic Capacitor event named
+     * {@code foregroundServiceTimeout} with a {@code {at}} payload. Not a Socket.IO
+     * event — no {@code on()}/{@code listenTo} subscription is required for it.
+     */
+    public static void notifyServiceTimeout(long at) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("at", at);
+        } catch (JSONException ignored) {
+            // Unreachable: "at" is always a valid JSON value.
+        }
+        dispatchLifecycleEvent("foregroundServiceTimeout", payload);
+    }
+
+    /**
+     * Forwards a foreground-service-start failure (e.g. the dataSync quota was
+     * already exhausted when we tried to start) to the plugin as a synthetic
+     * Capacitor event named {@code foregroundServiceUnavailable} with a
+     * {@code {reason}} payload.
+     */
+    public static void notifyServiceUnavailable(String reason) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("reason", reason != null ? reason : "unknown");
+        } catch (JSONException ignored) {
+            // Unreachable: "reason" is always a valid JSON value.
+        }
+        dispatchLifecycleEvent("foregroundServiceUnavailable", payload);
+    }
+
+    // Snapshots the listener under the class lock, then invokes it outside the lock —
+    // mirrors handleSocketEvent below so a listener callback can never deadlock against
+    // another synchronized method on this class.
+    private static void dispatchLifecycleEvent(String eventName, JSONObject payload) {
+        CapacitorSocketIO.SocketEventListener listener;
+        synchronized (SocketIOForegroundSession.class) {
+            listener = pluginEventListener;
+        }
+        if (listener != null) {
+            listener.onEvent(eventName, new Object[] { payload });
+        }
     }
 
     public static synchronized void configureEventNotifications(Context context, JSONObject foregroundServiceConfig) {

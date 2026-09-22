@@ -55,6 +55,19 @@ public class CapacitorSocketIOPlugin extends Plugin {
         SocketIOForegroundSession.setPluginEventListener(this::handleSocketEvent);
     }
 
+    // Android replenishes the dataSync foreground-service budget once the app is back
+    // in the foreground, so any quota-exhausted mark from a prior background session is
+    // stale the moment the user reopens the app. ForegroundQuota.isExhausted also
+    // self-expires after 24h as a backstop, but resume is the normal, fast path.
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        Context context = getContext();
+        if (context != null) {
+            ForegroundQuota.clear(context);
+        }
+    }
+
     @PluginMethod
     public void connect(PluginCall call) {
         final String url = call.getString("url", CapacitorSocketIO.DEFAULT_URL);
@@ -64,17 +77,20 @@ public class CapacitorSocketIOPlugin extends Plugin {
         ioExecutor.execute(() -> {
             try {
                 IO.Options ioOptions = buildIoOptions(url, options);
-                boolean foregroundService = isForegroundServiceEnabled(options);
-                usingForegroundSession = foregroundService;
-                if (foregroundService) {
-                    startSocketForegroundService(options);
-                }
+                boolean foregroundRequested = isForegroundServiceEnabled(options);
+                ForegroundServiceOutcome outcome = foregroundRequested
+                    ? startSocketForegroundService(foregroundServiceConfig(options))
+                    : ForegroundServiceOutcome.notRequested();
+                usingForegroundSession = outcome.started;
                 activeSocketManager().connect(url, ioOptions);
 
                 JSObject result = new JSObject();
                 result.put("status", "connecting");
                 result.put("url", url);
-                result.put("foregroundService", foregroundService);
+                result.put("foregroundService", outcome.started);
+                if (outcome.reason != null) {
+                    result.put("reason", outcome.reason);
+                }
                 resolveOnUiThread(call, result);
             } catch (URISyntaxException uriEx) {
                 rejectOnUiThread(call, "Invalid Socket.IO endpoint: " + uriEx.getMessage(), uriEx);
@@ -180,6 +196,56 @@ public class CapacitorSocketIOPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /**
+     * Starts (or re-starts) the Android foreground socket service independently of
+     * {@link #connect}, so callers can defer requesting it until there is an actual
+     * reason to keep the socket alive in the background (e.g. app backgrounding with
+     * an active watch/job). {@code call}'s data is used directly as the foreground
+     * service config (notificationTitle/notificationText/notificationId/eventNotifications
+     * — the same shape as {@code options.foregroundService} passed to connect()).
+     *
+     * Deliberately does NOT touch usingForegroundSession / route future emit()/on()/
+     * disconnect() calls onto the session socket manager: when connect() did not itself
+     * request the foreground session, the live socket lives on this instance's plain
+     * socketManager, and this method's only job is to keep the *process* alive/
+     * prioritized (any started foreground service does that for every component in the
+     * process) — not to migrate an already-connected socket to a different, unconnected
+     * manager instance.
+     */
+    @PluginMethod
+    public void startForegroundService(PluginCall call) {
+        ioExecutor.execute(() -> {
+            JSONObject config = call.getData();
+            ForegroundServiceOutcome outcome = startSocketForegroundService(config != null ? config : new JSONObject());
+
+            JSObject result = new JSObject();
+            result.put("running", SocketIOForegroundSession.isServiceRunning());
+            result.put("started", outcome.started);
+            if (outcome.reason != null) {
+                result.put("reason", outcome.reason);
+            }
+            resolveOnUiThread(call, result);
+        });
+    }
+
+    /**
+     * Reports the foreground service's running state and whether the dataSync
+     * time-limit quota is currently exhausted (and since when), so JS can decide
+     * whether it is worth attempting {@link #startForegroundService}.
+     */
+    @PluginMethod
+    public void getForegroundServiceStatus(PluginCall call) {
+        Context context = getContext();
+        boolean exhausted = context != null && ForegroundQuota.isExhausted(context);
+        long exhaustedAt = context != null ? ForegroundQuota.exhaustedAt(context) : -1L;
+
+        JSObject result = new JSObject();
+        result.put("running", SocketIOForegroundSession.isServiceRunning());
+        result.put("exhausted", exhausted);
+        result.put("exhaustedAt", exhaustedAt);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void stopForegroundService(PluginCall call) {
         ioExecutor.execute(() -> {
@@ -233,8 +299,17 @@ public class CapacitorSocketIOPlugin extends Plugin {
         notifyOnUiThread(eventName, payload);
     }
 
+    // Routes strictly on this instance's own usingForegroundSession flag — NOT on the
+    // static SocketIOForegroundSession.isServiceRunning() — because the foreground
+    // Android service can now be started/stopped independently of connect() (see
+    // startForegroundService()/stopForegroundService()) purely to keep the process
+    // prioritized while backgrounded. Falling back to the static "is any foreground
+    // service running anywhere" flag would silently reroute an already-connected plain
+    // socket onto the (unconnected) session socket manager the moment some unrelated
+    // caller starts the foreground service, breaking emit()/on()/disconnect() for the
+    // live connection.
     private CapacitorSocketIO activeSocketManager() {
-        if (usingForegroundSession || SocketIOForegroundSession.isServiceRunning()) {
+        if (usingForegroundSession) {
             return SocketIOForegroundSession.getSocketManager();
         }
         return socketManager;
@@ -256,23 +331,55 @@ public class CapacitorSocketIOPlugin extends Plugin {
         return false;
     }
 
-    private void startSocketForegroundService(JSObject options) {
-        JSONObject config = foregroundServiceConfig(options);
+    /** Result of attempting to start the Android foreground socket service. */
+    private static final class ForegroundServiceOutcome {
+        final boolean started;
+        final String reason;
+
+        private ForegroundServiceOutcome(boolean started, String reason) {
+            this.started = started;
+            this.reason = reason;
+        }
+
+        static ForegroundServiceOutcome notRequested() {
+            return new ForegroundServiceOutcome(false, null);
+        }
+
+        static ForegroundServiceOutcome started() {
+            return new ForegroundServiceOutcome(true, null);
+        }
+
+        static ForegroundServiceOutcome failed(String reason) {
+            return new ForegroundServiceOutcome(false, reason);
+        }
+    }
+
+    private ForegroundServiceOutcome startSocketForegroundService(JSONObject config) {
+        Context context = getContext();
+        if (context == null) {
+            return ForegroundServiceOutcome.failed("no-context");
+        }
+        if (ForegroundQuota.isExhausted(context)) {
+            return ForegroundServiceOutcome.failed("quota-exhausted");
+        }
+
         String title = config.optString("notificationTitle", "Socket.IO connection active");
         String text = config.optString("notificationText", "Keeping a real-time connection available.");
         int notificationId = config.optInt("notificationId", SocketIOForegroundSession.DEFAULT_NOTIFICATION_ID);
-        Context context = getContext();
-        if (context == null) {
-            return;
-        }
 
         SocketIOForegroundSession.configureEventNotifications(context, config);
         Intent intent = SocketIOForegroundService.startIntent(context, title, text, notificationId);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (Exception ex) {
+            Logger.warn(LOG_TAG, "Failed to start foreground socket service: " + ex.getMessage());
+            return ForegroundServiceOutcome.failed("start-failed");
         }
+        return ForegroundServiceOutcome.started();
     }
 
     private void stopSocketForegroundService() {

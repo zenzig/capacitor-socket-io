@@ -138,6 +138,44 @@ The plugin includes a **debug-only trust-all SSL mode** that allows connections 
 
 This matches typical development workflows where local proxies use self-signed certs, while production environments use CA-issued certificates.
 
+## Android foreground service (background Socket.IO)
+
+`connect()` accepts an optional `options.foregroundService` config to start an Android foreground
+service (`dataSync` type) that keeps the socket connection alive while the app is backgrounded.
+Android 15 (API 35) enforces a rolling **~6 hours of `dataSync` foreground-service runtime per 24
+hours**. Once that budget is spent, the OS stops the service and refuses to start it again until
+the app returns to the foreground (which replenishes the budget) — so:
+
+- Prefer starting the foreground service **only when there is an actual reason to keep the socket
+  alive in the background** (an active subscription/watch, a running job), not unconditionally at
+  connect time. Call `startForegroundService(options)` independently of `connect()` when that
+  reason begins (e.g. the app is about to background), and `stopForegroundService()` when it ends.
+- Check `getForegroundServiceStatus()` before starting — while `exhausted` is `true`,
+  `startForegroundService()` (and `connect()` with `foregroundService` requested) will no-op and
+  report `{ started: false, reason: 'quota-exhausted' }` rather than throwing.
+- Listen for the native-only `foregroundServiceTimeout` (`args[0]: { at }`) and
+  `foregroundServiceUnavailable` (`args[0]: { reason }`) events to know when the OS reclaimed the
+  budget or refused to start the service, instead of retrying immediately — wait for the app to
+  come back to the foreground, which clears the exhausted flag.
+
+```ts
+await CapacitorSocketIO.connect({ url, options: { auth: { token } } }); // no foregroundService here
+
+// Later, e.g. on app backgrounding, only if there's a reason to stay connected:
+const { started, reason } = await CapacitorSocketIO.startForegroundService({
+  notificationTitle: 'Connection active',
+  notificationText: 'Keeping a real-time connection available.',
+});
+
+// On app foreground:
+await CapacitorSocketIO.stopForegroundService();
+```
+
+This mirrors the fix for Android's `ForegroundServiceDidNotStopInTimeException` /
+`ForegroundServiceStartNotAllowedException` crash loop: the native service now implements
+`onTimeout()`, always returns `START_NOT_STICKY` (never restarts itself with a null `Intent`), and
+wraps `startForeground()` in a try/catch that records the quota exhaustion instead of crashing.
+
 ## Token-based authentication
 
 The bundled Socket.IO upstream can require stateless JWTs before accepting a connection. Enable it by supplying one of the following environment variable sets before launching the proxy stack:
@@ -155,7 +193,11 @@ When authentication is disabled the server behaves exactly as before. When enabl
 | `disconnect()` | Close the current socket and release native resources. |
 | `emit(options: EmitOptions)` | Send data to the server. |
 | `on({ event })` | Ask the native layer to forward a specific event down to Capacitor listeners. |
-| `addListener(eventName, callback)` | Subscribe to events (`connect`, custom messages, etc.). |
+| `isForegroundServiceRunning()` | Reports whether the Android foreground socket service is active. |
+| `startForegroundService(options?)` | Starts the Android foreground socket service independently of `connect()`. See [Android foreground service](#android-foreground-service-background-socketio). |
+| `stopForegroundService()` | Stops the Android foreground socket service and disconnects the socket. |
+| `getForegroundServiceStatus()` | Reports `{ running, exhausted, exhaustedAt }` for the Android dataSync time-limit quota. |
+| `addListener(eventName, callback)` | Subscribe to events (`connect`, custom messages, `foregroundServiceTimeout`, `foregroundServiceUnavailable`, etc.). |
 | `removeAllListeners()` | Clears all registered listeners in both native and web implementations. |
 
 ## Contributing

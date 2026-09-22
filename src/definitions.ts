@@ -121,6 +121,10 @@ export interface ConnectResult {
   status: string;
   /** URL initially provided to the socket manager. */
   url: string;
+  /** True when `options.foregroundService` was requested and the native service actually started. */
+  foregroundService?: boolean;
+  /** Machine-readable reason `foregroundService` is false, e.g. `'quota-exhausted'`. */
+  reason?: string;
 }
 
 /**
@@ -176,6 +180,65 @@ export interface ForegroundServiceStatusResult {
 }
 
 /**
+ * Config accepted by {@link CapacitorSocketIOPlugin.startForegroundService}. Same
+ * shape as {@link SocketIOForegroundServiceOptions} minus `enabled`, which has no
+ * meaning outside of `connect()`'s opt-in flag.
+ */
+export type StartForegroundServiceOptions = Omit<SocketIOForegroundServiceOptions, 'enabled'>;
+
+/**
+ * Result returned by {@link CapacitorSocketIOPlugin.startForegroundService}.
+ */
+export interface StartForegroundServiceResult extends ForegroundServiceStatusResult {
+  /** True when the Android foreground service was actually (re)started. */
+  started: boolean;
+  /**
+   * Machine-readable reason `started` is false, e.g. `'quota-exhausted'` when the
+   * Android 15+ dataSync foreground-service time budget is currently spent, or
+   * `'no-context'` / `'start-failed'` for other native failures. Absent when `started`
+   * is true.
+   */
+  reason?: string;
+}
+
+/**
+ * Result returned by {@link CapacitorSocketIOPlugin.getForegroundServiceStatus}.
+ */
+export interface ForegroundServiceQuotaStatusResult extends ForegroundServiceStatusResult {
+  /**
+   * True when the Android 15+ dataSync foreground-service time budget (roughly 6h
+   * per rolling 24h window) is currently exhausted. While true, calls to
+   * {@link CapacitorSocketIOPlugin.startForegroundService} (and `connect()` with
+   * `foregroundService` requested) will not start the native service — Android
+   * replenishes the budget once the app returns to the foreground.
+   */
+  exhausted: boolean;
+  /** Unix epoch ms the quota was last marked exhausted, or -1 if never. */
+  exhaustedAt: number;
+}
+
+/**
+ * Payload delivered on the native-only `foregroundServiceTimeout` Capacitor event
+ * (as `args[0]` on the standard listener payload) when Android's dataSync
+ * foreground-service time limit is reached and the service stops itself.
+ */
+export interface ForegroundServiceTimeoutEventPayload {
+  /** Unix epoch ms when the OS-enforced time limit was reached. */
+  at: number;
+}
+
+/**
+ * Payload delivered on the native-only `foregroundServiceUnavailable` Capacitor
+ * event (as `args[0]` on the standard listener payload) when the foreground
+ * service could not be started at all (most commonly because the dataSync quota
+ * was already exhausted).
+ */
+export interface ForegroundServiceUnavailableEventPayload {
+  /** Machine-readable failure reason, e.g. `'quota-exhausted'`. */
+  reason: string;
+}
+
+/**
  * Public API contract exposed by the Capacitor Socket.IO plugin.
  */
 export interface CapacitorSocketIOPlugin {
@@ -221,6 +284,25 @@ export interface CapacitorSocketIOPlugin {
    * Stops the Android foreground socket service and disconnects the foreground socket.
    */
   stopForegroundService(): Promise<ForegroundServiceStatusResult>;
+  /**
+   * Starts (or re-starts) the Android foreground socket service independently of
+   * {@link connect}. Use this to defer requesting the service until there is an
+   * actual reason to keep the socket alive in the background (e.g. app backgrounding
+   * with an active watch/job) rather than requesting it unconditionally at connect
+   * time — the OS enforces a rolling ~6h/24h time budget on `dataSync` foreground
+   * services (Android 15+), so requesting it only when needed conserves the budget.
+   * No-ops (and reports `started:false, reason:'quota-exhausted'`) while that budget
+   * is currently exhausted; see {@link getForegroundServiceStatus}.
+   *
+   * @param options - Notification and event-notification config for the service.
+   */
+  startForegroundService(options?: StartForegroundServiceOptions): Promise<StartForegroundServiceResult>;
+  /**
+   * Reports whether the Android foreground socket service is running and whether the
+   * dataSync time-limit quota is currently exhausted (and since when), so callers can
+   * decide whether it is worth attempting {@link startForegroundService}.
+   */
+  getForegroundServiceStatus(): Promise<ForegroundServiceQuotaStatusResult>;
   /**
    * Registers a listener for a previously subscribed Socket.IO event.
    *

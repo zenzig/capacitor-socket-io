@@ -9,10 +9,13 @@ import type {
   DrainBufferedEventsResult,
   EmitOptions,
   EmitResult,
+  ForegroundServiceQuotaStatusResult,
   ForegroundServiceStatusResult,
   ListenResult,
   SocketEventPayload,
   SocketIOConnectOptions,
+  StartForegroundServiceOptions,
+  StartForegroundServiceResult,
 } from './definitions';
 
 /** Default HTTPS endpoint used when no URL override is provided. */
@@ -144,6 +147,20 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
    */
   async stopForegroundService(): Promise<ForegroundServiceStatusResult> {
     return { running: false };
+  }
+
+  /**
+   * Web has no Android foreground service to start.
+   */
+  async startForegroundService(_options?: StartForegroundServiceOptions): Promise<StartForegroundServiceResult> {
+    return { running: false, started: false, reason: 'unsupported' };
+  }
+
+  /**
+   * Web has no dataSync foreground-service quota to track.
+   */
+  async getForegroundServiceStatus(): Promise<ForegroundServiceQuotaStatusResult> {
+    return { running: false, exhausted: false, exhaustedAt: -1 };
   }
 
   /**
