@@ -167,4 +167,54 @@ public class CapacitorSocketIOTest {
             .hostnameVerifier((hostname, session) -> true)
             .build();
     }
+
+    private static IO.Options offlineOptions() {
+        IO.Options opts = new IO.Options();
+        opts.reconnection = false;
+        opts.timeout = 500;
+        return opts;
+    }
+
+    @Test
+    public void secondConnectWithSameSignatureReusesSocket() throws Exception {
+        assertTrue(!manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-a"));
+        Socket first = manager.getSocket();
+        assertNotNull(first);
+        assertTrue(manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-a"));
+        assertTrue(first == manager.getSocket());
+    }
+
+    @Test
+    public void connectWithDifferentSignatureOrAfterDisconnectRebuilds() throws Exception {
+        manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-a");
+        Socket first = manager.getSocket();
+        assertTrue(!manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-b"));
+        Socket second = manager.getSocket();
+        assertTrue(first != second);
+        manager.disconnect();
+        assertTrue(!manager.canReuse("sig-b"));
+        assertTrue(!manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-b"));
+        assertTrue(second != manager.getSocket());
+    }
+
+    @Test
+    public void coreEventsAreNotAttachedAsDynamicListeners() {
+        assertTrue(CapacitorSocketIO.isCoreEvent("connect"));
+        assertTrue(CapacitorSocketIO.isCoreEvent("disconnect"));
+        assertTrue(!CapacitorSocketIO.isCoreEvent("research:job"));
+    }
+
+    @Test
+    public void coreEventListenRequestDoesNotDuplicateDispatch() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger connectErrors = new java.util.concurrent.atomic.AtomicInteger();
+        manager.setEventListener((name, args) -> {
+            if ("connect_error".equals(name)) {
+                connectErrors.incrementAndGet();
+            }
+        });
+        manager.listenTo("connect_error");
+        manager.connect("http://127.0.0.1:9/", offlineOptions(), "sig-a");
+        Thread.sleep(1500);
+        assertTrue("connect_error delivered " + connectErrors.get() + "x", connectErrors.get() == 1);
+    }
 }

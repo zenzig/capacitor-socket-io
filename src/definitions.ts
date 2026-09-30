@@ -121,6 +121,11 @@ export interface ConnectResult {
   status: string;
   /** URL initially provided to the socket manager. */
   url: string;
+  /**
+   * True when a live/connecting socket for the same URL and options already existed and was
+   * reused untouched (`status` is then `connected` or `connecting`).
+   */
+  reused?: boolean;
   /** True when `options.foregroundService` was requested and the native service actually started. */
   foregroundService?: boolean;
   /** Machine-readable reason `foregroundService` is false, e.g. `'quota-exhausted'`. */

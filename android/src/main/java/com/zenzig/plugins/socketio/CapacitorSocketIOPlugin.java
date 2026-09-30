@@ -77,16 +77,33 @@ public class CapacitorSocketIOPlugin extends Plugin {
         ioExecutor.execute(() -> {
             try {
                 IO.Options ioOptions = buildIoOptions(url, options);
+                // Reuse a live/connecting socket for the same endpoint+options instead of tearing
+                // it down (a redundant connect() used to close the websocket within a second).
+                final String signature = url + "|" + options.toString();
+                CapacitorSocketIO current = activeSocketManager();
+                if (current.canReuse(signature)) {
+                    JSObject reused = new JSObject();
+                    reused.put("status", current.isConnected() ? "connected" : "connecting");
+                    reused.put("url", url);
+                    reused.put("reused", true);
+                    reused.put("foregroundService", usingForegroundSession);
+                    resolveOnUiThread(call, reused);
+                    return;
+                }
                 boolean foregroundRequested = isForegroundServiceEnabled(options);
                 ForegroundServiceOutcome outcome = foregroundRequested
                     ? startSocketForegroundService(foregroundServiceConfig(options))
                     : ForegroundServiceOutcome.notRequested();
                 usingForegroundSession = outcome.started;
-                activeSocketManager().connect(url, ioOptions);
+                if (current != activeSocketManager()) {
+                    current.disconnect();
+                }
+                activeSocketManager().connect(url, ioOptions, signature);
 
                 JSObject result = new JSObject();
                 result.put("status", "connecting");
                 result.put("url", url);
+                result.put("reused", false);
                 result.put("foregroundService", outcome.started);
                 if (outcome.reason != null) {
                     result.put("reason", outcome.reason);

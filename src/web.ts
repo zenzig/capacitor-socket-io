@@ -66,6 +66,7 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
   private socket?: Socket;
   private requestedEvents = new Set<string>();
   private attachedEvents = new Set<string>();
+  private signature?: string;
 
   /**
    * Initiates a Socket.IO connection and sets up listener scaffolding.
@@ -75,8 +76,14 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
    */
   async connect(options?: ConnectOptions): Promise<ConnectResult> {
     const targetUrl = options?.url ?? DEFAULT_URL;
+    const signature = `${targetUrl}|${JSON.stringify(options?.options ?? {})}`;
+
+    if (this.socket && this.signature === signature) {
+      return { status: this.socket.connected ? 'connected' : 'connecting', url: targetUrl, reused: true };
+    }
 
     this.disconnectInternal();
+    this.signature = signature;
 
     const normalisedOptions = this.buildOptions(targetUrl, options?.options);
     this.socket = io(targetUrl, normalisedOptions);
@@ -201,6 +208,10 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
    * @param event - Socket.IO event name.
    */
   private attachDynamicListener(event: string): void {
+    // Core events are already forwarded by attachCoreListeners().
+    if (CORE_EVENTS.includes(event)) {
+      return;
+    }
     this.attachListener(event);
   }
 

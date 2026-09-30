@@ -46,28 +46,58 @@ public class CapacitorSocketIO {
 
     private volatile SocketEventListener eventListener;
     private Socket socket;
+    private String activeSignature;
+    /** Set once the socket cannot recover by itself; the next connect() must rebuild it. */
+    private volatile boolean dead;
 
     public void setEventListener(SocketEventListener eventListener) {
         this.eventListener = eventListener;
     }
 
-    /**
-     * Establishes a new Socket.IO connection. Any previous connection is torn down to guarantee a
-     * clean session.
-     */
-    public synchronized void connect(String url, IO.Options options) throws URISyntaxException {
+    /** Same as {@link #connect(String, IO.Options, String)} with the URL as the signature. */
+    public synchronized boolean connect(String url, IO.Options options) throws URISyntaxException {
         String targetUrl = (url == null || url.trim().isEmpty()) ? DEFAULT_URL : url;
+        return connect(targetUrl, options, targetUrl);
+    }
+
+    /**
+     * Whether a connect() with this signature would reuse the live socket: a socket exists, was
+     * created with the same signature, has not been torn down by disconnect(), and has not given
+     * up reconnecting (reconnect_failed / server-initiated disconnect).
+     */
+    public synchronized boolean canReuse(String signature) {
+        return socket != null && !dead && signature != null && signature.equals(activeSignature);
+    }
+
+    /**
+     * Establishes a Socket.IO connection. If a socket for the same signature is already connected
+     * or connecting (or auto-reconnecting) it is reused untouched, so a redundant connect() never
+     * closes a live websocket. The socket is torn down and recreated only when the signature
+     * differs, disconnect() was called, or the previous socket gave up.
+     *
+     * @return true when the existing socket was reused.
+     */
+    public synchronized boolean connect(String url, IO.Options options, String signature)
+        throws URISyntaxException {
+        String targetUrl = (url == null || url.trim().isEmpty()) ? DEFAULT_URL : url;
+        if (canReuse(signature)) {
+            logDebug("Reusing existing socket for " + targetUrl);
+            return true;
+        }
         logDebug("Connecting to " + targetUrl);
 
         disconnectInternal();
 
         IO.Options resolvedOptions = options != null ? options : new IO.Options();
         socket = IO.socket(targetUrl, resolvedOptions);
+        activeSignature = signature;
+        dead = false;
 
         attachCoreListeners();
         attachDynamicListeners();
 
         socket.connect();
+        return false;
     }
 
     /** Disconnects the socket and clears any listeners that were attached. */
@@ -135,6 +165,7 @@ public class CapacitorSocketIO {
             logWarn("Error while disconnecting socket: " + ex.getMessage());
         } finally {
             socket = null;
+            activeSignature = null;
         }
     }
 
@@ -149,7 +180,14 @@ public class CapacitorSocketIO {
     }
 
     private void attachCoreListener(String event) {
-        Emitter.Listener listener = (args) -> dispatchEvent(event, args);
+        Emitter.Listener listener = (args) -> {
+            if ("reconnect_failed".equals(event)
+                || ("disconnect".equals(event) && args != null && args.length > 0
+                    && "io server disconnect".equals(String.valueOf(args[0])))) {
+                dead = true;
+            }
+            dispatchEvent(event, args);
+        };
         coreListeners.put(event, listener);
         socket.on(event, listener);
     }
@@ -158,8 +196,19 @@ public class CapacitorSocketIO {
         requestedEvents.forEach(this::attachDynamicListener);
     }
 
+    static boolean isCoreEvent(String event) {
+        for (String core : CORE_EVENTS) {
+            if (core.equals(event)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void attachDynamicListener(String event) {
-        if (socket == null || dynamicListeners.containsKey(event)) {
+        // Core lifecycle events are always forwarded by attachCoreListeners(); a second native
+        // listener would deliver every lifecycle event to JS twice.
+        if (socket == null || isCoreEvent(event) || dynamicListeners.containsKey(event)) {
             return;
         }
 
