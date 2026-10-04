@@ -26,6 +26,14 @@ public class CapacitorSocketIO {
     }
 
     private final Map<String, Emitter.Listener> coreListeners = new ConcurrentHashMap<>();
+    private final Map<String, Emitter.Listener> managerListeners = new ConcurrentHashMap<>();
+    /** Reconnect lifecycle lives on the Manager (socket.io()), never on the Socket itself. */
+    static final String[] MANAGER_EVENTS = new String[] {
+        "reconnect",
+        "reconnect_attempt",
+        "reconnect_error",
+        "reconnect_failed"
+    };
     private final Map<String, Emitter.Listener> dynamicListeners = new ConcurrentHashMap<>();
     private final Set<String> requestedEvents = ConcurrentHashMap.newKeySet();
     private static final String[] CORE_EVENTS = new String[] {
@@ -153,6 +161,12 @@ public class CapacitorSocketIO {
         coreListeners.forEach((event, listener) -> socket.off(event, listener));
         coreListeners.clear();
 
+        io.socket.client.Manager manager = socket.io();
+        if (manager != null) {
+            managerListeners.forEach((event, listener) -> manager.off(event, listener));
+        }
+        managerListeners.clear();
+
         dynamicListeners.forEach((event, listener) -> socket.off(event, listener));
         dynamicListeners.clear();
 
@@ -176,6 +190,24 @@ public class CapacitorSocketIO {
 
         for (String event : CORE_EVENTS) {
             attachCoreListener(event);
+        }
+        attachManagerListeners();
+    }
+
+    private void attachManagerListeners() {
+        io.socket.client.Manager manager = socket.io();
+        if (manager == null) {
+            return;
+        }
+        for (String event : MANAGER_EVENTS) {
+            Emitter.Listener listener = (args) -> {
+                if ("reconnect_failed".equals(event)) {
+                    dead = true;
+                }
+                dispatchEvent(event, args);
+            };
+            managerListeners.put(event, listener);
+            manager.on(event, listener);
         }
     }
 

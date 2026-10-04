@@ -266,7 +266,13 @@ public class CapacitorSocketIOPlugin extends Plugin {
     @PluginMethod
     public void stopForegroundService(PluginCall call) {
         ioExecutor.execute(() -> {
-            activeSocketManager().disconnect();
+            // Only the session socket belongs to the foreground service. When the live
+            // socket is the plain one (the service is independent of it), leave it
+            // connected: disconnecting here killed the live socket on every app-foreground
+            // (2026-10-03 "transport close" 6 s after connect).
+            if (usingForegroundSession) {
+                activeSocketManager().disconnect();
+            }
             stopSocketForegroundService();
             usingForegroundSession = false;
 
@@ -495,6 +501,33 @@ public class CapacitorSocketIOPlugin extends Plugin {
         return new Object[0];
     }
 
+    /** {message, cause ("a <- b" chain of cause messages), type} so JS can log why a connect failed. */
+    static JSONObject throwableToJson(Throwable error) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("message", String.valueOf(error));
+            StringBuilder chain = new StringBuilder();
+            Throwable cause = error.getCause();
+            int depth = 0;
+            while (cause != null && cause != error && depth < 6) {
+                if (chain.length() > 0) {
+                    chain.append(" <- ");
+                }
+                chain.append(String.valueOf(cause));
+                if (cause.getCause() == cause) {
+                    break;
+                }
+                cause = cause.getCause();
+                depth++;
+            }
+            json.put("cause", chain.toString());
+            json.put("type", error.getClass().getSimpleName());
+        } catch (org.json.JSONException ignore) {
+            // keys are non-null constants; cannot happen
+        }
+        return json;
+    }
+
     private JSArray toJSArray(Object[] args) {
         JSArray array = new JSArray();
         if (args == null || args.length == 0) {
@@ -514,6 +547,8 @@ public class CapacitorSocketIOPlugin extends Plugin {
                 array.put(arg);
             } else if (arg instanceof byte[]) {
                 array.put(new String((byte[]) arg, StandardCharsets.UTF_8));
+            } else if (arg instanceof Throwable) {
+                array.put(throwableToJson((Throwable) arg));
             } else {
                 // Fallback to string representation for types we don't explicitly support.
                 array.put(String.valueOf(arg));
