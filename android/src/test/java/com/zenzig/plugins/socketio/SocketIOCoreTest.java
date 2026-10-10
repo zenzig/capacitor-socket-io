@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import io.socket.client.IO;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -118,5 +119,17 @@ public class SocketIOCoreTest {
     public void drainBufferedEventsReturnsAnEventsArray() throws Exception {
         JSONObject drained = core.drainBufferedEvents(new JSONArray().put("job:done"));
         assertNotNull(drained.getJSONArray("events"));
+    }
+
+    // Device token stays out of the URL (proxies log query strings); it rides in the CONNECT auth packet.
+    @Test
+    public void authTokenGoesInAuthPacketNotUrlQuery() throws Exception {
+        JSONObject options = new JSONObject()
+            .put("auth", new JSONObject().put("token", "tok-123").put("clientVersion", "v1"))
+            .put("query", new JSONObject().put("x", "1"));
+        IO.Options opts = core.buildIoOptions("https://example.invalid", options);
+        assertEquals("tok-123", opts.auth.get("token"));
+        assertTrue(opts.query == null || !opts.query.contains("token"));
+        assertTrue(opts.query != null && opts.query.contains("x=1"));
     }
 }

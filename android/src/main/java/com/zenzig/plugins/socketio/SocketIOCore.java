@@ -420,7 +420,7 @@ public final class SocketIOCore {
         return new JSONObject();
     }
 
-    private IO.Options buildIoOptions(String url, JSONObject options) {
+    IO.Options buildIoOptions(String url, JSONObject options) {
         IO.Options opts = new IO.Options();
         opts.forceNew = true;
 
@@ -457,8 +457,10 @@ public final class SocketIOCore {
 
         JSONObject authObject = normaliseAuthPayload(options.opt("auth"));
         if (authObject != null && authObject.length() > 0) {
-            tryInjectAuth(opts, authObject);
-            queryString = mergeQueryStrings(queryString, toQueryString(authObject));
+            // Auth travels in the CONNECT packet; the URL query (logged by proxies) only when the client can't carry it.
+            if (!tryInjectAuth(opts, authObject)) {
+                queryString = mergeQueryStrings(queryString, toQueryString(authObject));
+            }
         }
 
         if (queryString != null && !queryString.trim().isEmpty()) {
@@ -620,10 +622,10 @@ public final class SocketIOCore {
         return null;
     }
 
-    private void tryInjectAuth(IO.Options opts, JSONObject authObject) {
+    private boolean tryInjectAuth(IO.Options opts, JSONObject authObject) {
         Map<String, Object> authMap = jsonToMap(authObject);
         if (authMap.isEmpty()) {
-            return;
+            return true;
         }
 
         try {
@@ -636,9 +638,11 @@ public final class SocketIOCore {
             } else {
                 authField.set(opts, authMap);
             }
+            return true;
         } catch (NoSuchFieldException | IllegalAccessException ignored) {
             // Older socket.io-client releases do not expose IO.Options.auth; fall back to query
             // parameters which the proxy also accepts.
+            return false;
         }
     }
 
