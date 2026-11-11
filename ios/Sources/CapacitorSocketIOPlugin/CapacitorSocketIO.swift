@@ -231,7 +231,9 @@ public final class CapacitorSocketIO {
             config.insert(.path(path))
         }
 
-        if let params = combinedQueryParams(for: configuration) {
+        // Only the caller's own (non-credential) query params go in the URL. The auth payload is NEVER merged here:
+        // proxies log query strings. It is sent through connect(withPayload:) in connectInternal.
+        if let params = configuration.query, !params.isEmpty {
             config.insert(.connectParams(params))
         }
 
@@ -272,51 +274,6 @@ public final class CapacitorSocketIO {
         }
 
         return config
-    }
-
-    private func combinedQueryParams(for configuration: ConnectConfiguration) -> [String: String]? {
-        var params: [String: String] = configuration.query ?? [:]
-
-        if let authParams = convertAuthPayloadToQuery(configuration.authPayload) {
-            for (key, value) in authParams where params[key] == nil {
-                params[key] = value
-            }
-        }
-
-        return params.isEmpty ? nil : params
-    }
-
-    private func convertAuthPayloadToQuery(_ payload: [String: Any]?) -> [String: String]? {
-        guard let payload else { return nil }
-
-        var converted: [String: String] = [:]
-        for (key, value) in payload {
-            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedKey.isEmpty, let stringValue = stringValue(forAuth: value) else { continue }
-            converted[trimmedKey] = stringValue
-        }
-
-        return converted.isEmpty ? nil : converted
-    }
-
-    private func stringValue(forAuth value: Any) -> String? {
-        switch value {
-        case is NSNull:
-            return nil
-        case let string as String:
-            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        case let number as NSNumber:
-            if CFNumberIsFloatType(number) {
-                return String(describing: number.doubleValue)
-            }
-            return String(describing: number.intValue)
-        case let bool as Bool:
-            return bool ? "true" : "false"
-        default:
-            let description = String(describing: value)
-            return description.isEmpty ? nil : description
-        }
     }
 
     private static var isDebugBuild: Bool {

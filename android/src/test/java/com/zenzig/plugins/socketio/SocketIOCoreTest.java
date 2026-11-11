@@ -1,6 +1,9 @@
 package com.zenzig.plugins.socketio;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -131,5 +134,64 @@ public class SocketIOCoreTest {
         assertEquals("tok-123", opts.auth.get("token"));
         assertTrue(opts.query == null || !opts.query.contains("token"));
         assertTrue(opts.query != null && opts.query.contains("x=1"));
+    }
+
+    // Fail closed: if the auth cannot ride in the CONNECT packet, the connect is refused. It never falls back to the URL query.
+    private static JSONObject tokenOptions() throws Exception {
+        return new JSONObject()
+            .put("auth", new JSONObject().put("token", "SECRET-TOKEN-1"))
+            .put("query", new JSONObject().put("x", "1"));
+    }
+
+    private static final class RejectCapture implements SocketIOCore.Callback {
+        final CountDownLatch done = new CountDownLatch(1);
+        final AtomicReference<String> message = new AtomicReference<>();
+        final AtomicReference<Boolean> resolved = new AtomicReference<>(false);
+
+        @Override public void resolve(JSONObject result) { resolved.set(true); done.countDown(); }
+
+        @Override public void reject(String msg, Exception error) { message.set(msg); done.countDown(); }
+    }
+
+    @Test
+    public void failedAuthInjectionMakesBuildIoOptionsThrowAndNeverUsesTheQuery() throws Exception {
+        core.setAuthInjectorForTests((opts, auth) -> false);
+        SocketIOCore.AuthInjectionException error = assertThrows(
+            SocketIOCore.AuthInjectionException.class,
+            () -> core.buildIoOptions("https://example.invalid", tokenOptions())
+        );
+        assertFalse(String.valueOf(error.getMessage()).contains("SECRET-TOKEN-1"));
+    }
+
+    @Test
+    public void thrownAuthInjectionIsAlsoRefused() throws Exception {
+        core.setAuthInjectorForTests((opts, auth) -> { throw new IllegalStateException("boom SECRET-TOKEN-1"); });
+        assertThrows(
+            SocketIOCore.AuthInjectionException.class,
+            () -> core.buildIoOptions("https://example.invalid", tokenOptions())
+        );
+    }
+
+    @Test
+    public void failedAuthInjectionRejectsTheConnectAndOpensNoSocket() throws Exception {
+        core.setAuthInjectorForTests((opts, auth) -> false);
+        RejectCapture capture = new RejectCapture();
+        core.connect("https://example.invalid", tokenOptions(), capture);
+        assertTrue(capture.done.await(5, TimeUnit.SECONDS));
+        assertFalse(capture.resolved.get());
+        assertNotNull(capture.message.get());
+        assertTrue(capture.message.get(), capture.message.get().contains("AUTH_INJECTION_FAILED"));
+        assertFalse(capture.message.get().contains("SECRET-TOKEN-1"));
+        assertNull(core.plainManager().getSocket());
+    }
+
+    @Test
+    public void connectErrorMessageDoesNotEchoTheUrlOrItsQuery() throws Exception {
+        RejectCapture capture = new RejectCapture();
+        core.connect("ht!tp://bad host/?token=SECRET-IN-URL", new JSONObject(), capture);
+        assertTrue(capture.done.await(5, TimeUnit.SECONDS));
+        assertNotNull(capture.message.get());
+        assertFalse(capture.message.get(), capture.message.get().contains("SECRET-IN-URL"));
+        assertFalse(capture.message.get(), capture.message.get().contains("bad host"));
     }
 }

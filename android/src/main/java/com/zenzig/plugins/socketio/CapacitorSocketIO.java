@@ -89,10 +89,10 @@ public class CapacitorSocketIO {
         throws URISyntaxException {
         String targetUrl = (url == null || url.trim().isEmpty()) ? DEFAULT_URL : url;
         if (canReuse(signature)) {
-            logDebug("Reusing existing socket for " + targetUrl);
+            logDebug("Reusing existing socket (url redacted)");
             return true;
         }
-        logDebug("Connecting to " + targetUrl);
+        logDebug("Connecting (url redacted)");
 
         disconnectInternal();
 

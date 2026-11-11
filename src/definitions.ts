@@ -73,16 +73,17 @@ export interface SocketIOConnectOptions {
   reconnectionDelayMax?: number;
   /** Overrides the Socket.IO namespace path (defaults to `/socket.io`). */
   path?: string;
-  /** Query string parameters appended to the handshake request. */
+  /** Query string parameters appended to the handshake request. Never put a credential here (proxies log it); use `auth`. */
   query?: Record<string, string> | string;
   /** Transport whitelist (e.g. `['websocket']`). */
   transports?: string[];
   /** Android-only foreground service mode for durable background work. */
   foregroundService?: boolean | SocketIOForegroundServiceOptions;
   /**
-   * Authentication payload supplied during the Socket.IO handshake. Values are
-   * serialised to strings when forwarded to native layers that only support
-   * query-string based auth.
+   * Authentication payload sent in the Socket.IO CONNECT packet (`socket.handshake.auth`).
+   * It is never copied into the URL query on any platform; if a native layer cannot
+   * carry it in the CONNECT packet, `connect()` is rejected (Android: `AUTH_INJECTION_FAILED`).
+   * Do not put a credential in `url` or `query`: proxies and access logs record them.
    */
   auth?: Record<string, string | number | boolean | null>;
   /**

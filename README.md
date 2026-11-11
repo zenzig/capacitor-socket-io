@@ -185,6 +185,10 @@ The bundled Socket.IO upstream can require stateless JWTs before accepting a con
 
 When authentication is disabled the server behaves exactly as before. When enabled, the middleware expects a JWT in one of three places - `socket.handshake.auth.token`, a `token` query parameter, or an `Authorization: Bearer <token>` header.
 
+### Never put a credential in `url` or `query`
+
+Send tokens only through `options.auth`. The plugin places `auth` in the Socket.IO CONNECT packet (`socket.handshake.auth`) on both platforms and never copies it into the URL query: proxies, CDNs and access logs record the URL, including the query string. Do not put a token, key or password in `url` or in `options.query` either. If a platform cannot carry `auth` in the CONNECT packet, `connect()` rejects (Android: `AUTH_INJECTION_FAILED`) instead of falling back to the query. The plugin also logs only a class name and `<redacted>` in place of a payload or URL. (The server-side `token` query parameter above is accepted for legacy clients only; new clients must not use it.)
+
 ## API surface
 
 | Method | Description |

@@ -7,7 +7,6 @@ import android.os.Build;
 import com.getcapacitor.Logger;
 import io.socket.client.IO;
 import io.socket.client.Socket;
-import java.lang.reflect.Field;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -57,6 +56,20 @@ public final class SocketIOCore {
         void onSocketEvent(String eventName, JSONObject payload);
     }
 
+    /** Puts the auth map into the CONNECT packet. Returns false when it cannot. A seam so the fail-closed path can be tested. */
+    interface AuthInjector {
+        boolean inject(IO.Options opts, Map<String, Object> auth);
+    }
+
+    /** Auth could not be placed in the CONNECT packet. The connect is refused; the credential never goes in the URL. */
+    static final class AuthInjectionException extends IllegalStateException {
+        AuthInjectionException(String message) {
+            super(message);
+        }
+    }
+
+    static final String AUTH_INJECTION_FAILED = "AUTH_INJECTION_FAILED";
+
     public static SocketIOCore get() {
         SocketIOCore local = instance;
         if (local == null) {
@@ -79,6 +92,7 @@ public final class SocketIOCore {
         return instance;
     }
 
+    private volatile AuthInjector authInjector = SocketIOCore::injectAuthDirect;
     private final CapacitorSocketIO socketManager = new CapacitorSocketIO();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread t = new Thread(runnable, "socketio-core");
@@ -108,6 +122,11 @@ public final class SocketIOCore {
 
     public int sinkCount() {
         return sinks.size();
+    }
+
+    /** Test hook: replace the auth injector (null restores the real one). */
+    void setAuthInjectorForTests(AuthInjector injector) {
+        authInjector = injector != null ? injector : SocketIOCore::injectAuthDirect;
     }
 
     CapacitorSocketIO plainManager() {
@@ -160,10 +179,14 @@ public final class SocketIOCore {
                     result.put("reason", outcome.reason);
                 }
                 callback.resolve(result);
+            } catch (AuthInjectionException authEx) {
+                // Fail closed: nothing has been connected, and the credential is not echoed back.
+                callback.reject(AUTH_INJECTION_FAILED + ": the auth payload could not be placed in the CONNECT packet; connect refused", authEx);
             } catch (URISyntaxException uriEx) {
-                callback.reject("Invalid Socket.IO endpoint: " + uriEx.getMessage(), uriEx);
+                // URISyntaxException.getMessage() embeds the whole URI (query included); report the class only.
+                callback.reject("Invalid Socket.IO endpoint (" + uriEx.getClass().getSimpleName() + "; url redacted)", uriEx);
             } catch (Exception ex) {
-                callback.reject("Failed to initiate connection: " + ex.getMessage(), ex);
+                callback.reject("Failed to initiate connection (" + ex.getClass().getSimpleName() + ")", ex);
             }
         });
     }
@@ -289,7 +312,8 @@ public final class SocketIOCore {
 
     private void handleSocketEvent(String eventName, Object[] args) {
         if (Socket.EVENT_CONNECT_ERROR.equals(eventName) && args != null && args.length > 0) {
-            Logger.warn(LOG_TAG, "connect_error payload: " + args[0]);
+            // The payload can carry the server's echo of the handshake (URL, token); log the class only.
+            warn("connect_error received (" + (args[0] == null ? "null" : args[0].getClass().getSimpleName()) + "; details redacted)");
         }
         JSONObject payload = new JSONObject();
         try {
@@ -457,9 +481,10 @@ public final class SocketIOCore {
 
         JSONObject authObject = normaliseAuthPayload(options.opt("auth"));
         if (authObject != null && authObject.length() > 0) {
-            // Auth travels in the CONNECT packet; the URL query (logged by proxies) only when the client can't carry it.
+            // Auth travels only in the CONNECT packet. The URL query is logged by proxies, so there is no
+            // query fallback: if the auth cannot be injected the connect is refused (fail closed).
             if (!tryInjectAuth(opts, authObject)) {
-                queryString = mergeQueryStrings(queryString, toQueryString(authObject));
+                throw new AuthInjectionException("auth could not be injected into the CONNECT packet");
             }
         }
 
@@ -580,7 +605,7 @@ public final class SocketIOCore {
         try {
             return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
         } catch (Exception ex) {
-            Logger.warn(LOG_TAG, "Failed to url-encode value: " + value);
+            warn("Failed to url-encode a query value (<redacted>)");
             return value;
         }
     }
@@ -627,23 +652,29 @@ public final class SocketIOCore {
         if (authMap.isEmpty()) {
             return true;
         }
-
         try {
-            Field authField = IO.Options.class.getField("auth");
-            Object existing = authField.get(opts);
-            if (existing instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> existingMap = (Map<String, Object>) existing;
-                existingMap.putAll(authMap);
-            } else {
-                authField.set(opts, authMap);
-            }
-            return true;
-        } catch (NoSuchFieldException | IllegalAccessException ignored) {
-            // Older socket.io-client releases do not expose IO.Options.auth; fall back to query
-            // parameters which the proxy also accepts.
+            return authInjector.inject(opts, authMap);
+        } catch (RuntimeException ex) {
+            // Do not carry the exception message: it could quote the credential.
+            warn("auth injection failed (" + ex.getClass().getSimpleName() + ")");
             return false;
         }
+    }
+
+    /**
+     * socket.io-client 2.1.2 exposes {@code IO.Options.auth} as a public field: use it directly, no reflection.
+     * The field is declared {@code Map<String,String>}, but the client serialises it with {@code new JSONObject(map)},
+     * so non-string values (numbers, booleans) keep their JSON type. The cast below keeps what the old reflective path did.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean injectAuthDirect(IO.Options opts, Map<String, Object> authMap) {
+        Map<String, Object> target = (Map<String, Object>) (Map<?, ?>) opts.auth;
+        if (target == null) {
+            target = new HashMap<>();
+            opts.auth = (Map<String, String>) (Map<?, ?>) target;
+        }
+        target.putAll(authMap);
+        return true;
     }
 
     private Map<String, Object> jsonToMap(JSONObject json) {
@@ -668,18 +699,6 @@ public final class SocketIOCore {
         }
 
         return map;
-    }
-
-    private String mergeQueryStrings(String base, String addition) {
-        if (addition == null || addition.trim().isEmpty()) {
-            return base;
-        }
-
-        if (base == null || base.trim().isEmpty()) {
-            return addition;
-        }
-
-        return base + '&' + addition;
     }
 
     private void configureTrustAllSsl(IO.Options opts) {
