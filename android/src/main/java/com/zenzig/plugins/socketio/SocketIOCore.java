@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
 import com.getcapacitor.Logger;
+import io.socket.client.Ack;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import java.net.URISyntaxException;
@@ -21,6 +22,12 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -49,6 +56,14 @@ public final class SocketIOCore {
         void resolve(JSONObject result);
 
         void reject(String message, Exception error);
+
+        /**
+         * Rejection with a machine-readable code (see {@link #ACK_TIMEOUT}, {@link #NOT_CONNECTED}). The default drops
+         * the code and calls the two-argument form, so callbacks written before emitWithAck keep compiling.
+         */
+        default void reject(String message, String code, Exception error) {
+            reject(message, error);
+        }
     }
 
     /** Receives every socket event: {@code payload = {event, args[, id]}}; lifecycle events included. */
@@ -69,6 +84,21 @@ public final class SocketIOCore {
     }
 
     static final String AUTH_INJECTION_FAILED = "AUTH_INJECTION_FAILED";
+
+    /** emitWithAck error codes (also the JS-visible {@code code} of the rejected promise). */
+    static final String ACK_TIMEOUT = "ACK_TIMEOUT";
+    static final String NOT_CONNECTED = "NOT_CONNECTED";
+    static final String INVALID_ARGUMENT = "INVALID_ARGUMENT";
+    static final String EMIT_FAILED = "EMIT_FAILED";
+
+    /** How long emitWithAck waits for the server when the caller gives no {@code timeoutMs}. */
+    static final long DEFAULT_ACK_TIMEOUT_MS = 10_000L;
+
+    /** Sends one event and wires the ack. A seam so the ack / timeout / not-connected paths run without a server. */
+    interface AckTransport {
+        /** @throws CapacitorSocketIO.NotConnectedException when there is no connected socket. */
+        void emitWithAck(String event, Object[] payload, Ack ack);
+    }
 
     public static SocketIOCore get() {
         SocketIOCore local = instance;
@@ -93,6 +123,9 @@ public final class SocketIOCore {
     }
 
     private volatile AuthInjector authInjector = SocketIOCore::injectAuthDirect;
+    private volatile AckTransport ackTransport = (event, payload, ack) -> activeSocketManager().emitWithAck(event, payload, ack);
+    /** One daemon thread for ack timeouts; a cancelled timer leaves the queue at once (setRemoveOnCancelPolicy). */
+    private final ScheduledThreadPoolExecutor ackTimer = newAckTimer();
     private final CapacitorSocketIO socketManager = new CapacitorSocketIO();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread t = new Thread(runnable, "socketio-core");
@@ -127,6 +160,26 @@ public final class SocketIOCore {
     /** Test hook: replace the auth injector (null restores the real one). */
     void setAuthInjectorForTests(AuthInjector injector) {
         authInjector = injector != null ? injector : SocketIOCore::injectAuthDirect;
+    }
+
+    /** Test hook: replace the ack transport (null restores the real one). */
+    void setAckTransportForTests(AckTransport transport) {
+        ackTransport = transport != null ? transport : (event, payload, ack) -> activeSocketManager().emitWithAck(event, payload, ack);
+    }
+
+    /** Test hook: ack timers still waiting (0 once every call has settled and its timer was cancelled). */
+    int pendingAckTimers() {
+        return ackTimer.getQueue().size();
+    }
+
+    private static ScheduledThreadPoolExecutor newAckTimer() {
+        ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1, runnable -> {
+            Thread t = new Thread(runnable, "socketio-ack-timer");
+            t.setDaemon(true);
+            return t;
+        });
+        timer.setRemoveOnCancelPolicy(true);
+        return timer;
     }
 
     CapacitorSocketIO plainManager() {
@@ -224,6 +277,93 @@ public final class SocketIOCore {
                 callback.reject("Failed to emit event: " + ex.getMessage(), ex);
             }
         });
+    }
+
+    /**
+     * Emits {@code event} and resolves with {@code {args:[...]}}, the arguments of the server's acknowledgement.
+     * Rejects {@link #ACK_TIMEOUT} when no ack arrives within {@code timeoutMs} (default
+     * {@link #DEFAULT_ACK_TIMEOUT_MS}), {@link #NOT_CONNECTED} when there is no connected socket, and
+     * {@link #INVALID_ARGUMENT} for a blank event or a bad timeout. The payload follows {@link #emit}: non-empty
+     * {@code args} win, else {@code data} is the single argument. There is no retry: one packet, one outcome.
+     *
+     * <p>Exactly-once: the ack handler (socket thread) and the timeout task (timer thread) both race on one
+     * compare-and-set; only the winner settles the callback, and the ack winner cancels the timer.
+     */
+    public void emitWithAck(String event, JSONObject data, JSONArray argsArray, Object timeoutMs, Callback callback) {
+        if (event == null || event.trim().isEmpty()) {
+            callback.reject("Event name is required", INVALID_ARGUMENT, null);
+            return;
+        }
+        final long timeout;
+        try {
+            timeout = parseAckTimeout(timeoutMs);
+        } catch (IllegalArgumentException badTimeout) {
+            callback.reject(badTimeout.getMessage(), INVALID_ARGUMENT, badTimeout);
+            return;
+        }
+        ioExecutor.execute(() -> {
+            final Object[] payload;
+            try {
+                payload = buildEmitPayload(data, argsArray);
+            } catch (JSONException jsonEx) {
+                callback.reject("Unable to serialise emit payload: " + jsonEx.getMessage(), EMIT_FAILED, jsonEx);
+                return;
+            }
+
+            final AtomicBoolean settled = new AtomicBoolean(false);
+            final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
+            // The timer is armed BEFORE the emit, so an ack that beats emit() back to this thread still finds it.
+            timer.set(ackTimer.schedule(() -> {
+                if (!settled.compareAndSet(false, true)) return;
+                callback.reject("No acknowledgement for '" + event + "' within " + timeout + " ms", ACK_TIMEOUT, null);
+            }, timeout, TimeUnit.MILLISECONDS));
+
+            final Ack ack = ackArgs -> {
+                if (!settled.compareAndSet(false, true)) return;
+                cancel(timer);
+                try {
+                    callback.resolve(new JSONObject().put("args", toJSArray(ackArgs)));
+                } catch (JSONException impossible) {
+                    callback.resolve(new JSONObject());
+                }
+            };
+
+            try {
+                ackTransport.emitWithAck(event, payload, ack);
+            } catch (CapacitorSocketIO.NotConnectedException notConnected) {
+                if (settled.compareAndSet(false, true)) {
+                    cancel(timer);
+                    callback.reject(notConnected.getMessage(), NOT_CONNECTED, notConnected);
+                }
+            } catch (Exception ex) {
+                if (settled.compareAndSet(false, true)) {
+                    cancel(timer);
+                    callback.reject("Failed to emit event: " + ex.getMessage(), EMIT_FAILED, ex);
+                }
+            }
+        });
+    }
+
+    private static void cancel(AtomicReference<ScheduledFuture<?>> timer) {
+        ScheduledFuture<?> future = timer.get();
+        if (future != null) future.cancel(false);
+    }
+
+    /**
+     * Reads the JS {@code timeoutMs}: absent or null gives the default; a finite number above zero is used (a fraction
+     * rounds up so it never becomes 0); anything else throws IllegalArgumentException.
+     */
+    static long parseAckTimeout(Object raw) {
+        if (raw == null || raw == JSONObject.NULL) {
+            return DEFAULT_ACK_TIMEOUT_MS;
+        }
+        if (raw instanceof Number) {
+            double value = ((Number) raw).doubleValue();
+            if (!Double.isNaN(value) && !Double.isInfinite(value) && value > 0) {
+                return (long) Math.ceil(value);
+            }
+        }
+        throw new IllegalArgumentException("timeoutMs must be a finite number greater than 0");
     }
 
     /** Registers native interest in {@code event} on both socket managers (plain and foreground session). */

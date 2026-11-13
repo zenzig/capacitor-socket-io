@@ -9,6 +9,7 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "disconnect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "emit", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "emitWithAck", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "on", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeAllListeners", returnType: CAPPluginReturnPromise)
     ]
@@ -82,6 +83,11 @@ public class CapacitorSocketIOPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.reject(call, message: "Failed to emit event", error: error)
             }
         }
+    }
+
+    /// Acknowledged emit is Android and web only for now (no Mac on the build host). Rejects with code UNIMPLEMENTED.
+    @objc func emitWithAck(_ call: CAPPluginCall) {
+        call.unimplemented("emitWithAck is not implemented on iOS")
     }
 
     @objc func on(_ call: CAPPluginCall) {

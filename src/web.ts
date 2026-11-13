@@ -9,6 +9,9 @@ import type {
   DrainBufferedEventsResult,
   EmitOptions,
   EmitResult,
+  EmitWithAckErrorCode,
+  EmitWithAckOptions,
+  EmitWithAckResult,
   ForegroundServiceQuotaStatusResult,
   ForegroundServiceStatusResult,
   ListenResult,
@@ -20,6 +23,21 @@ import type {
 
 /** Default HTTPS endpoint used when no URL override is provided. */
 const DEFAULT_URL = 'https://socket-proxy.local/';
+
+/** How long emitWithAck waits for an acknowledgement when the caller gives no `timeoutMs`. */
+export const DEFAULT_ACK_TIMEOUT_MS = 10_000;
+
+/** Message socket.io-client uses when `socket.timeout()` expires (see socket.js `_registerAckCallback`). */
+const SOCKET_IO_ACK_TIMEOUT_MESSAGE = 'operation has timed out';
+
+/**
+ * Builds a rejection that carries a machine-readable `code`, like a native Capacitor rejection.
+ *
+ * @param message - Human readable sentence.
+ * @param code - One of the emitWithAck error codes.
+ * @returns An Error whose `code` property is set.
+ */
+const ackError = (message: string, code: EmitWithAckErrorCode): Error => Object.assign(new Error(message), { code });
 
 /** Core Socket.IO lifecycle events automatically bridged to Capacitor listeners. */
 const CORE_EVENTS = [
@@ -115,6 +133,53 @@ export class CapacitorSocketIOWeb extends WebPlugin implements CapacitorSocketIO
     const payload = this.buildEmitPayload(options);
     socket.emit(options.event, ...payload);
     return { status: 'emitted', event: options.event };
+  }
+
+  /**
+   * Emits an event and resolves with the server's acknowledgement arguments.
+   *
+   * Exactly-once: socket.io-client's `timeout()` calls the callback once, either with the ack or with a timeout/disconnect
+   * error, and clears its own timer on ack. The `settled` flag is a second guard so the promise can never settle twice.
+   *
+   * @param options - Event name, data or args, and an optional `timeoutMs` (default {@link DEFAULT_ACK_TIMEOUT_MS}).
+   * @returns The acknowledgement arguments as `{ args }`.
+   * @throws {Error} With `code` `INVALID_ARGUMENT`, `NOT_CONNECTED` or `ACK_TIMEOUT`.
+   */
+  async emitWithAck(options: EmitWithAckOptions): Promise<EmitWithAckResult> {
+    const event = typeof options?.event === 'string' ? options.event : '';
+    if (event.trim().length === 0) {
+      throw ackError('Event name is required', 'INVALID_ARGUMENT');
+    }
+
+    const requested = options.timeoutMs;
+    const timeoutMs = requested === undefined || requested === null ? DEFAULT_ACK_TIMEOUT_MS : requested;
+    if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw ackError('timeoutMs must be a finite number greater than 0', 'INVALID_ARGUMENT');
+    }
+
+    const socket = this.socket;
+    if (!socket?.connected) {
+      throw ackError('Socket is not connected. Call connect() first.', 'NOT_CONNECTED');
+    }
+
+    const payload = this.buildEmitPayload(options);
+    return new Promise<EmitWithAckResult>((resolve, reject) => {
+      let settled = false;
+      socket.timeout(Math.ceil(timeoutMs)).emit(event, ...payload, (error: Error | null, ...ackArgs: unknown[]) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (!error) {
+          resolve({ args: this.serialiseArgs(ackArgs) });
+        } else if (error.message === SOCKET_IO_ACK_TIMEOUT_MESSAGE) {
+          reject(ackError(`No acknowledgement for '${event}' within ${timeoutMs} ms`, 'ACK_TIMEOUT'));
+        } else {
+          // The only other error socket.io-client passes is "socket has been disconnected".
+          reject(ackError('Socket disconnected before the acknowledgement arrived', 'NOT_CONNECTED'));
+        }
+      });
+    });
   }
 
   /**

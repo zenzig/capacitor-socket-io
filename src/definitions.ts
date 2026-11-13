@@ -115,6 +115,42 @@ export interface EmitOptions {
 }
 
 /**
+ * Options accepted by {@link CapacitorSocketIOPlugin.emitWithAck}. `data` / `args` follow the same rules as {@link EmitOptions}.
+ */
+export interface EmitWithAckOptions extends EmitOptions {
+  /**
+   * How long to wait for the server's acknowledgement, in milliseconds. Must be a finite number greater than 0.
+   * Defaults to 10000 (10 s) when omitted.
+   */
+  timeoutMs?: number;
+}
+
+/**
+ * Result returned by {@link CapacitorSocketIOPlugin.emitWithAck}.
+ */
+export interface EmitWithAckResult {
+  /** Every argument the server passed to the acknowledgement callback, in order (empty when it passed none). */
+  args: unknown[];
+}
+
+/**
+ * Machine-readable `code` carried by a rejected {@link CapacitorSocketIOPlugin.emitWithAck} call.
+ *
+ * - `ACK_TIMEOUT`: no acknowledgement arrived within `timeoutMs`. The event may still have reached the server.
+ * - `NOT_CONNECTED`: there was no connected socket (never connected, disconnected, or still connecting). Web also
+ *   uses it when the socket drops while the acknowledgement is pending; on Android that case ends as `ACK_TIMEOUT`.
+ * - `INVALID_ARGUMENT`: blank `event`, or a `timeoutMs` that is not a finite number above 0.
+ * - `EMIT_FAILED`: Android only; the payload could not be serialised or the socket client threw.
+ * - `UNIMPLEMENTED`: iOS, where `emitWithAck` is not available yet.
+ */
+export type EmitWithAckErrorCode =
+  | 'ACK_TIMEOUT'
+  | 'NOT_CONNECTED'
+  | 'INVALID_ARGUMENT'
+  | 'EMIT_FAILED'
+  | 'UNIMPLEMENTED';
+
+/**
  * Result returned by {@link CapacitorSocketIOPlugin.connect} once the socket is opening.
  */
 export interface ConnectResult {
@@ -268,6 +304,18 @@ export interface CapacitorSocketIOPlugin {
    * @returns Emit status metadata including the original event name.
    */
   emit(options: EmitOptions): Promise<EmitResult>;
+  /**
+   * Emits an event and waits for the server's acknowledgement callback.
+   *
+   * Resolves with the acknowledgement arguments. Rejects with a `code` of `ACK_TIMEOUT` (no ack within `timeoutMs`,
+   * default 10000), `NOT_CONNECTED` (no connected socket; nothing is queued), `INVALID_ARGUMENT`, `EMIT_FAILED` or,
+   * on iOS, `UNIMPLEMENTED` (see {@link EmitWithAckErrorCode}). The plugin never retries: one call sends the event
+   * at most once. Available on Android and web.
+   *
+   * @param options - Event name, data or args, and an optional `timeoutMs`.
+   * @returns The acknowledgement arguments as `{ args }`.
+   */
+  emitWithAck(options: EmitWithAckOptions): Promise<EmitWithAckResult>;
   /**
    * Subscribes to a server-side event before attaching Capacitor listeners.
    *

@@ -1,6 +1,7 @@
 package com.zenzig.plugins.socketio;
 
 import com.getcapacitor.Logger;
+import io.socket.client.Ack;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
@@ -125,6 +126,27 @@ public class CapacitorSocketIO {
         } else {
             socket.emit(event, args);
         }
+    }
+
+    /** There is no live, connected socket to emit on. Still an IllegalStateException so existing catchers keep working. */
+    public static final class NotConnectedException extends IllegalStateException {
+
+        public NotConnectedException() {
+            super("Socket is not connected. Call connect() first.");
+        }
+    }
+
+    /**
+     * Emits an event and hands the server's acknowledgement to {@code ack}. Unlike {@link #emit}, this refuses to
+     * buffer: when the socket does not exist or is not connected right now it throws {@link NotConnectedException}
+     * instead of queueing the packet for a later reconnect (the caller asked for an answer, not a delivery).
+     * The caller owns the timeout; socket.io-client-java never calls {@code ack} if the server does not answer.
+     */
+    public synchronized void emitWithAck(String event, Object[] args, Ack ack) {
+        if (socket == null || !socket.connected()) {
+            throw new NotConnectedException();
+        }
+        socket.emit(event, args == null ? new Object[0] : args, ack);
     }
 
     /** Registers interest in the provided event name so it will be forwarded to the listener. */

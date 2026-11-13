@@ -70,6 +70,18 @@ public class CapacitorSocketIOPlugin extends Plugin {
         core.emit(event, call.getObject("data"), call.getArray("args"), uiCallback(call));
     }
 
+    /**
+     * Emits and resolves with {@code {args}}, the server's acknowledgement arguments. Rejects with code
+     * {@code ACK_TIMEOUT}, {@code NOT_CONNECTED} or {@code INVALID_ARGUMENT}. {@code timeoutMs} is read raw
+     * (JS numbers arrive as Integer, Long or Double, and {@code getLong} would silently drop all but Long).
+     */
+    @PluginMethod
+    public void emitWithAck(PluginCall call) {
+        JSONObject payload = call.getData();
+        Object timeoutMs = payload != null ? payload.opt("timeoutMs") : null;
+        core.emitWithAck(call.getString("event"), call.getObject("data"), call.getArray("args"), timeoutMs, uiCallback(call));
+    }
+
     @PluginMethod
     public void on(PluginCall call) {
         String event = call.getString("event");
@@ -152,9 +164,14 @@ public class CapacitorSocketIOPlugin extends Plugin {
 
             @Override
             public void reject(String message, Exception error) {
+                reject(message, null, error);
+            }
+
+            @Override
+            public void reject(String message, String code, Exception error) {
                 mainHandler.post(() -> {
                     Logger.error(LOG_TAG, message, error);
-                    call.reject(message, null, error);
+                    call.reject(message, code, error);
                 });
             }
         };

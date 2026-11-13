@@ -189,6 +189,35 @@ When authentication is disabled the server behaves exactly as before. When enabl
 
 Send tokens only through `options.auth`. The plugin places `auth` in the Socket.IO CONNECT packet (`socket.handshake.auth`) on both platforms and never copies it into the URL query: proxies, CDNs and access logs record the URL, including the query string. Do not put a token, key or password in `url` or in `options.query` either. If a platform cannot carry `auth` in the CONNECT packet, `connect()` rejects (Android: `AUTH_INJECTION_FAILED`) instead of falling back to the query. The plugin also logs only a class name and `<redacted>` in place of a payload or URL. (The server-side `token` query parameter above is accepted for legacy clients only; new clients must not use it.)
 
+## Acknowledged emit (`emitWithAck`)
+
+`emit()` only reports that the event was handed to the socket. Use `emitWithAck()` when the server answers with a Socket.IO acknowledgement callback and you need that answer.
+
+```ts
+import { CapacitorSocketIO } from '@zenzig/capacitor-socket-io';
+
+try {
+  const { args } = await CapacitorSocketIO.emitWithAck({
+    event: 'job:submit',
+    data: { id: 'a1' },   // or `args: [...]`, same rules as emit()
+    timeoutMs: 5000,      // optional, default 10000
+  });
+  const [reply] = args;   // every argument the server passed to its ack callback
+} catch (error) {
+  // error.code is ACK_TIMEOUT | NOT_CONNECTED | INVALID_ARGUMENT | EMIT_FAILED | UNIMPLEMENTED
+}
+```
+
+| Code | Meaning |
+| --- | --- |
+| `ACK_TIMEOUT` | No acknowledgement within `timeoutMs` (default 10000). The server may still have received the event. |
+| `NOT_CONNECTED` | No connected socket. Nothing is queued for a later reconnect. On web it also covers a socket that drops while waiting; on Android that case ends as `ACK_TIMEOUT`. |
+| `INVALID_ARGUMENT` | Blank `event`, or `timeoutMs` that is not a finite number above 0. |
+| `EMIT_FAILED` | Android only: the payload could not be serialised or the socket client threw. |
+| `UNIMPLEMENTED` | iOS. `emitWithAck` is not available there yet. |
+
+The plugin never retries. One call sends the event at most once and settles exactly once (ack or error, never both). The credential rule is unchanged: `auth` travels in the CONNECT packet and never in the URL query.
+
 ## API surface
 
 | Method | Description |
@@ -196,6 +225,7 @@ Send tokens only through `options.auth`. The plugin places `auth` in the Socket.
 | `connect(options?: ConnectOptions)` | Open (or reopen) a Socket.IO connection. |
 | `disconnect()` | Close the current socket and release native resources. |
 | `emit(options: EmitOptions)` | Send data to the server. |
+| `emitWithAck(options: EmitWithAckOptions)` | Send data and wait for the server's acknowledgement. Resolves `{ args }`. Android and web; iOS rejects `UNIMPLEMENTED`. See [Acknowledged emit](#acknowledged-emit-emitwithack). |
 | `on({ event })` | Ask the native layer to forward a specific event down to Capacitor listeners. |
 | `isForegroundServiceRunning()` | Reports whether the Android foreground socket service is active. |
 | `startForegroundService(options?)` | Starts the Android foreground socket service independently of `connect()`. See [Android foreground service](#android-foreground-service-background-socketio). |
