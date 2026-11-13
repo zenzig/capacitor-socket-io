@@ -25,22 +25,25 @@ describe('Android foreground socket service contract', () => {
 
   it('routes foreground service events through a native event buffer', () => {
     const plugin = read('android/src/main/java/com/zenzig/plugins/socketio/CapacitorSocketIOPlugin.java');
+    // AF3c (0b7a757): connect() and its foregroundService handling moved from the plugin into the process-level core.
+    const core = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOCore.java');
     const service = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOForegroundService.java');
     const session = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOForegroundSession.java');
 
     expect(plugin).toContain('drainBufferedEvents');
     expect(plugin).toContain('isForegroundServiceRunning');
-    expect(plugin).toContain('foregroundService');
+    expect(core).toContain('foregroundService');
     expect(service).toContain('startForeground');
     expect(session).toContain('bufferedEvents');
     expect(session).toContain('drainBufferedEvents');
   });
 
   it('can post configured notifications for foreground socket terminal events', () => {
-    const plugin = read('android/src/main/java/com/zenzig/plugins/socketio/CapacitorSocketIOPlugin.java');
+    // AF3c (0b7a757): the core, not the Capacitor plugin, configures the event notifications at service start.
+    const core = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOCore.java');
     const session = read('android/src/main/java/com/zenzig/plugins/socketio/SocketIOForegroundSession.java');
 
-    expect(plugin).toContain('configureEventNotifications');
+    expect(core).toContain('configureEventNotifications');
     expect(session).toContain('eventNotifications');
     expect(session).toContain('deepLinkPrefix');
     expect(session).toContain('NotificationManager');
